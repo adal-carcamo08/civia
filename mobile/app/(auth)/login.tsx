@@ -18,12 +18,14 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [emailError, setEmailError] = useState('');
   const [passwordError, setPasswordError] = useState('');
+  const [authError, setAuthError] = useState('');
 
   const validateForm = () => {
     let isValid = true;
 
     setEmailError('');
     setPasswordError('');
+    setAuthError('');
 
     const normalizedEmail = email.trim();
 
@@ -47,7 +49,15 @@ export default function LoginScreen() {
       return;
     }
 
-    // La autenticación real se conectará posteriormente con el backend.
+    if (
+      normalizedEmail.toLowerCase() === 'demo@civia.com' &&
+      password === 'Civia123'
+    ) {
+      router.replace('/organizations');
+      return;
+    }
+
+    setAuthError('Correo o contraseña incorrectos.');
   };
 
   return (
@@ -147,6 +157,9 @@ export default function LoginScreen() {
                 ) : null}
               </View>
 
+              {authError ? (
+                <Text style={styles.authError}>{authError}</Text>
+              ) : null}
               <Pressable
                 onPress={validateForm}
                 style={({ pressed }) => [
@@ -257,6 +270,12 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 13,
     lineHeight: 18,
+    color: '#D92D20',
+  },
+  authError: {
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
     color: '#D92D20',
   },
   primaryButton: {
