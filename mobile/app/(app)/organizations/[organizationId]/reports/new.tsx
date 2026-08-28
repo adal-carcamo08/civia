@@ -4,6 +4,7 @@ import { useState } from 'react';
 import {
   Image,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -21,7 +22,10 @@ export default function NewReportScreen() {
 
   const [description, setDescription] = useState('');
   const [location, setLocation] = useState('');
+  const [selectedCategory] = useState('');
+  const [categoryModalVisible, setCategoryModalVisible] = useState(false);
   const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const [categoryError, setCategoryError] = useState('');
   const [descriptionError, setDescriptionError] = useState('');
   const [locationError, setLocationError] = useState('');
   const [photoError, setPhotoError] = useState('');
@@ -55,8 +59,14 @@ export default function NewReportScreen() {
   const validateForm = () => {
     let isValid = true;
 
+    setCategoryError('');
     setDescriptionError('');
     setLocationError('');
+
+    if (!selectedCategory) {
+      setCategoryError('Selecciona una categoría.');
+      isValid = false;
+    }
 
     if (!description.trim()) {
       setDescriptionError('Describe el problema que deseas reportar.');
@@ -158,15 +168,33 @@ export default function NewReportScreen() {
               <View style={styles.field}>
                 <Text style={styles.label}>Categoría</Text>
 
-                <View style={styles.categoryField}>
-                  <Text style={styles.categoryText}>
-                    Seleccionar categoría
+                <Pressable
+                  onPress={() => setCategoryModalVisible(true)}
+                  style={[
+                    styles.categoryField,
+                    categoryError ? styles.inputError : undefined,
+                  ]}
+                >
+                  <Text
+                    style={
+                      selectedCategory
+                        ? styles.categorySelectedText
+                        : styles.categoryText
+                    }
+                  >
+                    {selectedCategory || 'Seleccionar categoría'}
                   </Text>
-                </View>
 
-                <Text style={styles.helperText}>
-                  Las categorías disponibles dependerán de la organización.
-                </Text>
+                  <View style={styles.categoryArrow} />
+                </Pressable>
+
+                {categoryError ? (
+                  <Text style={styles.errorText}>{categoryError}</Text>
+                ) : (
+                  <Text style={styles.helperText}>
+                    Las categorías disponibles dependerán de la organización.
+                  </Text>
+                )}
               </View>
 
               <View style={styles.field}>
@@ -256,6 +284,37 @@ export default function NewReportScreen() {
               </Pressable>
             </View>
           </View>
+
+          <Modal
+            visible={categoryModalVisible}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setCategoryModalVisible(false)}
+          >
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalCard}>
+                <Text style={styles.modalTitle}>Seleccionar categoría</Text>
+
+                <Text style={styles.modalEmptyText}>
+                  No hay categorías disponibles.
+                </Text>
+
+                <Text style={styles.modalHelperText}>
+                  Las opciones aparecerán cuando se carguen desde la organización.
+                </Text>
+
+                <Pressable
+                  onPress={() => setCategoryModalVisible(false)}
+                  style={({ pressed }) => [
+                    styles.modalButton,
+                    pressed ? styles.buttonPressed : undefined,
+                  ]}
+                >
+                  <Text style={styles.modalButtonText}>Cerrar</Text>
+                </Pressable>
+              </View>
+            </View>
+          </Modal>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -374,9 +433,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#344054',
   },
+
   categoryField: {
     height: 54,
-    justifyContent: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
     borderWidth: 1,
     borderColor: '#D0D5DD',
@@ -386,6 +448,21 @@ const styles = StyleSheet.create({
   categoryText: {
     fontSize: 16,
     color: '#98A2B3',
+  },
+  categorySelectedText: {
+    flex: 1,
+    fontSize: 16,
+    color: '#1F2937',
+  },
+  categoryArrow: {
+    width: 9,
+    height: 9,
+    marginLeft: 12,
+    marginTop: -4,
+    borderRightWidth: 2,
+    borderBottomWidth: 2,
+    borderColor: '#667085',
+    transform: [{ rotate: '45deg' }],
   },
   helperText: {
     fontSize: 13,
@@ -460,6 +537,47 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#17365D',
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 28,
+    backgroundColor: 'rgba(16, 24, 40, 0.35)',
+  },
+  modalCard: {
+    padding: 24,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1F2937',
+  },
+  modalEmptyText: {
+    marginTop: 20,
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#344054',
+  },
+  modalHelperText: {
+    marginTop: 6,
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#667085',
+  },
+  modalButton: {
+    height: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 24,
+    borderRadius: 10,
+    backgroundColor: '#17365D',
+  },
+  modalButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   buttonPressed: {
     opacity: 0.88,
