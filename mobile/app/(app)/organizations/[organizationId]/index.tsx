@@ -1,4 +1,4 @@
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import {
   Pressable,
   StyleSheet,
@@ -8,6 +8,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function OrganizationHomeScreen() {
+  const { organizationId } = useLocalSearchParams<{
+    organizationId: string;
+  }>();
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
@@ -23,6 +27,12 @@ export default function OrganizationHomeScreen() {
 
         <View style={styles.actions}>
           <Pressable
+            onPress={() =>
+              router.push({
+                pathname: '/organizations/[organizationId]/reports/new',
+                params: { organizationId },
+              })
+            }
             style={({ pressed }) => [
               styles.primaryButton,
               pressed ? styles.buttonPressed : undefined,
@@ -53,7 +63,7 @@ export default function OrganizationHomeScreen() {
         </View>
 
         <Pressable
-          onPress={() => router.back()}
+          onPress={() => router.replace('/organizations')}
           style={({ pressed }) => [
             styles.backButton,
             pressed ? styles.buttonPressed : undefined,
