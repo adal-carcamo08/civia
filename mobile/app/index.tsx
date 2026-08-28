@@ -1,12 +1,20 @@
+import { router } from 'expo-router';
+import { useEffect } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
-export default function IndexScreen() {
+export default function SplashScreen() {
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      router.replace('/login');
+    }, 1500);
+
+    return () => clearTimeout(timeout);
+  }, []);
+
   return (
     <View style={styles.container}>
-      <Text style={styles.brand}>CIVIA</Text>
-      <Text style={styles.subtitle}>
-        Gestión inteligente de reportes
-      </Text>
+      <Text style={styles.logo}>CIVIA</Text>
+      <Text style={styles.subtitle}>Gestión inteligente de reportes</Text>
     </View>
   );
 }
@@ -17,18 +25,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#F7F9FB',
-    paddingHorizontal: 24,
   },
-  brand: {
-    fontSize: 42,
+  logo: {
+    fontSize: 48,
     fontWeight: '700',
     color: '#17365D',
     letterSpacing: 1,
   },
   subtitle: {
-    marginTop: 10,
-    fontSize: 16,
+    marginTop: 12,
+    fontSize: 18,
     color: '#667085',
-    textAlign: 'center',
   },
 });
