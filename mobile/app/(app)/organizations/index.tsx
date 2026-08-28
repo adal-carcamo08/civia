@@ -12,7 +12,14 @@ export default function OrganizationsScreen() {
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
         <View>
-          <Text style={styles.brand}>CIVIA</Text>
+          <View style={styles.headerRow}>
+            <Text style={styles.brand}>CIVIA</Text>
+
+            <Pressable onPress={() => router.push('/reports')}>
+              <Text style={styles.reportsLink}>Mis reportes</Text>
+            </Pressable>
+          </View>
+
           <Text style={styles.title}>Mis organizaciones</Text>
           <Text style={styles.subtitle}>
             Aquí encontrarás las organizaciones a las que perteneces.
@@ -70,12 +77,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 28,
     paddingVertical: 32,
   },
-  brand: {
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 24,
+  },
+  brand: {
     fontSize: 22,
     fontWeight: '700',
     color: '#17365D',
     letterSpacing: 0.5,
+  },
+  reportsLink: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#2F75B5',
   },
   title: {
     fontSize: 32,
