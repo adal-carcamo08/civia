@@ -1,6 +1,8 @@
+import * as ImagePicker from 'expo-image-picker';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import {
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -19,8 +21,36 @@ export default function NewReportScreen() {
 
   const [description, setDescription] = useState('');
   const [location, setLocation] = useState('');
+  const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [descriptionError, setDescriptionError] = useState('');
   const [locationError, setLocationError] = useState('');
+  const [photoError, setPhotoError] = useState('');
+
+  const selectPhoto = async () => {
+    setPhotoError('');
+
+    if (Platform.OS !== 'web') {
+      const permission =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+      if (!permission.granted) {
+        setPhotoError(
+          'CIVIA necesita permiso para acceder a tus fotografías.'
+        );
+        return;
+      }
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets.length > 0) {
+      setPhotoUri(result.assets[0].uri);
+    }
+  };
 
   const validateForm = () => {
     let isValid = true;
@@ -68,6 +98,64 @@ export default function NewReportScreen() {
 
             <View style={styles.form}>
               <View style={styles.field}>
+                <Text style={styles.label}>Fotografía</Text>
+
+                {photoUri ? (
+                  <View style={styles.photoContainer}>
+                    <Image
+                      source={{ uri: photoUri }}
+                      style={styles.photoPreview}
+                    />
+
+                    <View style={styles.photoActions}>
+                      <Pressable
+                        onPress={selectPhoto}
+                        style={({ pressed }) => [
+                          styles.photoButton,
+                          pressed ? styles.buttonPressed : undefined,
+                        ]}
+                      >
+                        <Text style={styles.photoButtonText}>Cambiar</Text>
+                      </Pressable>
+
+                      <Pressable
+                        onPress={() => setPhotoUri(null)}
+                        style={({ pressed }) => [
+                          styles.removePhotoButton,
+                          pressed ? styles.buttonPressed : undefined,
+                        ]}
+                      >
+                        <Text style={styles.removePhotoText}>Quitar</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                ) : (
+                  <Pressable
+                    onPress={selectPhoto}
+                    style={({ pressed }) => [
+                      styles.photoSelector,
+                      pressed ? styles.buttonPressed : undefined,
+                    ]}
+                  >
+                    <Text style={styles.photoSelectorTitle}>
+                      Agregar fotografía
+                    </Text>
+                    <Text style={styles.photoSelectorText}>
+                      Selecciona una imagen de tu dispositivo
+                    </Text>
+                  </Pressable>
+                )}
+
+                <Text style={styles.helperText}>
+                  La fotografía es opcional.
+                </Text>
+
+                {photoError ? (
+                  <Text style={styles.errorText}>{photoError}</Text>
+                ) : null}
+              </View>
+
+              <View style={styles.field}>
                 <Text style={styles.label}>Categoría</Text>
 
                 <View style={styles.categoryField}>
@@ -111,9 +199,7 @@ export default function NewReportScreen() {
                     <View />
                   )}
 
-                  <Text style={styles.counter}>
-                    {description.length}/500
-                  </Text>
+                  <Text style={styles.counter}>{description.length}/500</Text>
                 </View>
               </View>
 
@@ -219,6 +305,72 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 15,
+    fontWeight: '600',
+    color: '#344054',
+  },
+  photoSelector: {
+    minHeight: 120,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#D0D5DD',
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+  },
+  photoSelectorTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#17365D',
+  },
+  photoSelectorText: {
+    marginTop: 6,
+    fontSize: 14,
+    textAlign: 'center',
+    color: '#667085',
+  },
+  photoContainer: {
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#E4E7EC',
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+  },
+  photoPreview: {
+    width: '100%',
+    height: 210,
+    resizeMode: 'cover',
+  },
+  photoActions: {
+    flexDirection: 'row',
+    gap: 10,
+    padding: 12,
+  },
+  photoButton: {
+    flex: 1,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+    backgroundColor: '#17365D',
+  },
+  photoButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  removePhotoButton: {
+    flex: 1,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#D0D5DD',
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+  },
+  removePhotoText: {
+    fontSize: 14,
     fontWeight: '600',
     color: '#344054',
   },
