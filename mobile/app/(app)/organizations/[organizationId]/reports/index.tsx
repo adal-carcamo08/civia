@@ -7,7 +7,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-export default function OrganizationHomeScreen() {
+export default function OrganizationReportsScreen() {
   const { organizationId } = useLocalSearchParams<{
     organizationId: string;
   }>();
@@ -18,14 +18,25 @@ export default function OrganizationHomeScreen() {
         <View>
           <Text style={styles.brand}>CIVIA</Text>
 
-          <Text style={styles.title}>Organización</Text>
+          <Text style={styles.title}>Reportes de la organización</Text>
 
           <Text style={styles.subtitle}>
-            Gestiona y da seguimiento a tus reportes dentro de esta organización.
+            Consulta los reportes registrados dentro de esta organización.
           </Text>
         </View>
 
-        <View style={styles.actions}>
+        <View style={styles.emptyState}>
+          <View style={styles.iconCircle}>
+            <Text style={styles.iconText}>!</Text>
+          </View>
+
+          <Text style={styles.emptyTitle}>Aún no hay reportes</Text>
+
+          <Text style={styles.emptyText}>
+            Los reportes de esta organización aparecerán aquí cuando estén
+            disponibles.
+          </Text>
+
           <Pressable
             onPress={() =>
               router.push({
@@ -38,13 +49,13 @@ export default function OrganizationHomeScreen() {
               pressed ? styles.buttonPressed : undefined,
             ]}
           >
-            <Text style={styles.primaryButtonText}>Nuevo reporte</Text>
+            <Text style={styles.primaryButtonText}>Crear nuevo reporte</Text>
           </Pressable>
 
           <Pressable
             onPress={() =>
-              router.push({
-                pathname: '/organizations/[organizationId]/reports',
+              router.replace({
+                pathname: '/organizations/[organizationId]',
                 params: { organizationId },
               })
             }
@@ -54,29 +65,10 @@ export default function OrganizationHomeScreen() {
             ]}
           >
             <Text style={styles.secondaryButtonText}>
-              Ver reportes de la organización
+              Volver a la organización
             </Text>
           </Pressable>
         </View>
-
-        <View style={styles.infoCard}>
-          <Text style={styles.infoTitle}>Actividad de la organización</Text>
-
-          <Text style={styles.infoText}>
-            Aquí aparecerá la información de los reportes cuando CIVIA esté
-            conectado con el backend.
-          </Text>
-        </View>
-
-        <Pressable
-          onPress={() => router.replace('/organizations')}
-          style={({ pressed }) => [
-            styles.backButton,
-            pressed ? styles.buttonPressed : undefined,
-          ]}
-        >
-          <Text style={styles.backButtonText}>Volver</Text>
-        </Pressable>
       </View>
     </SafeAreaView>
   );
@@ -110,11 +102,43 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     color: '#667085',
   },
-  actions: {
-    marginTop: 36,
-    gap: 12,
+  emptyState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingBottom: 60,
+  },
+  iconCircle: {
+    width: 72,
+    height: 72,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 24,
+    borderRadius: 36,
+    backgroundColor: '#E8EFF7',
+  },
+  iconText: {
+    fontSize: 36,
+    fontWeight: '700',
+    color: '#17365D',
+  },
+  emptyTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    textAlign: 'center',
+    color: '#1F2937',
+  },
+  emptyText: {
+    maxWidth: 320,
+    marginTop: 10,
+    marginBottom: 28,
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: 'center',
+    color: '#667085',
   },
   primaryButton: {
+    width: '100%',
     height: 54,
     alignItems: 'center',
     justifyContent: 'center',
@@ -127,9 +151,11 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   secondaryButton: {
+    width: '100%',
     height: 54,
     alignItems: 'center',
     justifyContent: 'center',
+    marginTop: 12,
     borderWidth: 1,
     borderColor: '#D0D5DD',
     borderRadius: 12,
@@ -139,36 +165,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#17365D',
-  },
-  infoCard: {
-    marginTop: 28,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: '#E4E7EC',
-    borderRadius: 14,
-    backgroundColor: '#FFFFFF',
-  },
-  infoTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1F2937',
-  },
-  infoText: {
-    marginTop: 8,
-    fontSize: 15,
-    lineHeight: 22,
-    color: '#667085',
-  },
-  backButton: {
-    height: 50,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 'auto',
-  },
-  backButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#2F75B5',
   },
   buttonPressed: {
     opacity: 0.88,
