@@ -25,4 +25,9 @@ export class OrganizationsController {
   findMine(@Req() request: AuthenticatedRequest) {
     return this.organizationsService.findMine(request.user.id);
   }
+
+  @Get('public')
+  findPublic(@Req() request: AuthenticatedRequest) {
+    return this.organizationsService.findPublic(request.user.id);
+  }
 }
