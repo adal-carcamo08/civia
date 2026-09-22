@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: civia-postgres-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: civia
+      POSTGRES_USER: civia_user
+      POSTGRES_PASSWORD: civia_password
+    ports:
+      - "127.0.0.1:15433:5432"
+    volumes:
+      - civia_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U civia_user -d civia"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  civia_postgres_data:
