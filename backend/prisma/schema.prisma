@@ -1,13 +1,224 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
-  provider = "prisma-client"
-  output   = "../src/generated/prisma"
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
 }
 
 datasource db {
   provider = "postgresql"
+}
+
+enum UserRole {
+  USER
+  GLOBAL_ADMIN
+}
+
+enum OrganizationType {
+  PUBLIC
+  PRIVATE
+}
+
+enum MembershipRole {
+  MEMBER
+  STAFF
+  ADMIN
+}
+
+enum MembershipStatus {
+  ACTIVE
+  PENDING
+  SUSPENDED
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+  EXPIRED
+}
+
+enum ReportStatus {
+  RECEIVED
+  UNDER_REVIEW
+  ASSIGNED
+  IN_PROGRESS
+  RESOLVED
+  NOT_APPLICABLE
+  REJECTED
+}
+
+model User {
+  id           String   @id @default(uuid())
+  fullName     String
+  email        String   @unique
+  passwordHash String
+  role         UserRole @default(USER)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships         Membership[]
+  reportsCreated      Report[]              @relation("ReportReporter")
+  reportsAssigned     Report[]              @relation("ReportAssignee")
+  statusChanges       ReportStatusHistory[] @relation("StatusChangedBy")
+  invitationsCreated  Invitation[]          @relation("InvitationCreatedBy")
+  invitationsAccepted Invitation[]          @relation("InvitationAcceptedBy")
+}
+
+model Organization {
+  id          String           @id @default(uuid())
+  name        String
+  description String?
+  logoUrl     String?
+  type        OrganizationType
+  active      Boolean          @default(true)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  memberships Membership[]
+  invitations Invitation[]
+  departments Department[]
+  categories  Category[]
+  reports     Report[]
+
+  @@index([type, active])
+  @@index([name])
+}
+
+model Membership {
+  id             String           @id @default(uuid())
+  userId         String
+  organizationId String
+  role           MembershipRole   @default(MEMBER)
+  status         MembershipStatus @default(ACTIVE)
+  joinedAt       DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@index([organizationId, status])
+  @@index([userId, status])
+}
+
+model Invitation {
+  id               String           @id @default(uuid())
+  organizationId   String
+  email            String
+  tokenHash        String           @unique
+  status           InvitationStatus @default(PENDING)
+  expiresAt        DateTime
+  acceptedAt       DateTime?
+  revokedAt        DateTime?
+  createdByUserId  String
+  acceptedByUserId String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation("InvitationCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  acceptedBy   User?        @relation("InvitationAcceptedBy", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, status])
+  @@index([email, status])
+  @@index([expiresAt])
+}
+
+model Department {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  description    String?
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  categories   Category[]
+  reports      Report[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId, active])
+}
+
+model Category {
+  id             String   @id @default(uuid())
+  organizationId String
+  departmentId   String?
+  name           String
+  description    String?
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  department   Department?  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  reports      Report[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId, active])
+  @@index([departmentId])
+}
+
+model Report {
+  id               String       @id @default(uuid())
+  code             String       @unique
+  reporterId       String
+  organizationId   String
+  categoryId       String
+  departmentId     String?
+  assignedToUserId String?
+  status           ReportStatus @default(RECEIVED)
+  description      String
+  location         String
+  latitude         Float?
+  longitude        Float?
+  resolvedAt       DateTime?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  reporter     User         @relation("ReportReporter", fields: [reporterId], references: [id], onDelete: Restrict)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  category     Category     @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  department   Department?  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  assignedTo   User?        @relation("ReportAssignee", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+
+  attachments ReportAttachment[]
+  history     ReportStatusHistory[]
+
+  @@index([reporterId, createdAt])
+  @@index([organizationId, status])
+  @@index([categoryId])
+  @@index([departmentId, status])
+  @@index([assignedToUserId, status])
+}
+
+model ReportAttachment {
+  id        String   @id @default(uuid())
+  reportId  String
+  url       String
+  fileName  String?
+  mimeType  String?
+  createdAt DateTime @default(now())
+
+  report Report @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId])
+}
+
+model ReportStatusHistory {
+  id              String        @id @default(uuid())
+  reportId        String
+  fromStatus      ReportStatus?
+  toStatus        ReportStatus
+  changedByUserId String?
+  note            String?
+  createdAt       DateTime      @default(now())
+
+  report    Report @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  changedBy User?  @relation("StatusChangedBy", fields: [changedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([reportId, createdAt])
+  @@index([changedByUserId])
 }
