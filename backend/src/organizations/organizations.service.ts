@@ -1,4 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -81,5 +84,63 @@ export class OrganizationsService {
         membershipStatus: membership?.status ?? null,
       };
     });
+  }
+
+  async findOneForUser(organizationId: string, userId: string) {
+    const organization = await this.prisma.organization.findFirst({
+      where: {
+        id: organizationId,
+        active: true,
+        OR: [
+          {
+            type: 'PUBLIC',
+          },
+          {
+            memberships: {
+              some: {
+                userId,
+                status: 'ACTIVE',
+              },
+            },
+          },
+        ],
+      },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        logoUrl: true,
+        type: true,
+        memberships: {
+          where: {
+            userId,
+          },
+          select: {
+            role: true,
+            status: true,
+            joinedAt: true,
+          },
+          take: 1,
+        },
+      },
+    });
+
+    if (!organization) {
+      throw new NotFoundException('Organización no encontrada.');
+    }
+
+    const membership = organization.memberships[0] ?? null;
+
+    return {
+      id: organization.id,
+      name: organization.name,
+      description: organization.description,
+      logoUrl: organization.logoUrl,
+      type: organization.type,
+      isMember: membership?.status === 'ACTIVE',
+      membershipRole: membership?.role ?? null,
+      membershipStatus: membership?.status ?? null,
+      joinedAt: membership?.joinedAt ?? null,
+    };
   }
 }

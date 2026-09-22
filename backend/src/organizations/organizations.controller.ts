@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Param,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -29,5 +30,16 @@ export class OrganizationsController {
   @Get('public')
   findPublic(@Req() request: AuthenticatedRequest) {
     return this.organizationsService.findPublic(request.user.id);
+  }
+
+  @Get(':id')
+  findOne(
+    @Param('id') organizationId: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.organizationsService.findOneForUser(
+      organizationId,
+      request.user.id,
+    );
   }
 }

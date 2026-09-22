@@ -2,11 +2,13 @@ jest.mock('../prisma/prisma.service', () => ({
   PrismaService: class PrismaService {},
 }));
 
+import { NotFoundException } from '@nestjs/common';
 import { OrganizationsService } from './organizations.service';
 
 describe('OrganizationsService', () => {
   const membershipFindManyMock = jest.fn();
   const organizationFindManyMock = jest.fn();
+  const organizationFindFirstMock = jest.fn();
 
   let service: OrganizationsService;
 
@@ -19,6 +21,7 @@ describe('OrganizationsService', () => {
       },
       organization: {
         findMany: organizationFindManyMock,
+        findFirst: organizationFindFirstMock,
       },
     };
 
@@ -249,6 +252,149 @@ describe('OrganizationsService', () => {
         membershipRole: 'MEMBER',
         membershipStatus: 'PENDING',
       });
+    });
+  });
+
+  describe('findOneForUser', () => {
+    it('devuelve una organización pública donde el usuario es miembro', async () => {
+      const joinedAt = new Date('2026-09-22T16:47:38.594Z');
+
+      organizationFindFirstMock.mockResolvedValue({
+        id: 'organization-1',
+        name: 'Organización Demo CIVIA',
+        description: 'Organización pública de prueba.',
+        logoUrl: null,
+        type: 'PUBLIC',
+        memberships: [
+          {
+            role: 'MEMBER',
+            status: 'ACTIVE',
+            joinedAt,
+          },
+        ],
+      });
+
+      const result = await service.findOneForUser(
+        'organization-1',
+        'user-1',
+      );
+
+      expect(organizationFindFirstMock).toHaveBeenCalledWith({
+        where: {
+          id: 'organization-1',
+          active: true,
+          OR: [
+            {
+              type: 'PUBLIC',
+            },
+            {
+              memberships: {
+                some: {
+                  userId: 'user-1',
+                  status: 'ACTIVE',
+                },
+              },
+            },
+          ],
+        },
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          logoUrl: true,
+          type: true,
+          memberships: {
+            where: {
+              userId: 'user-1',
+            },
+            select: {
+              role: true,
+              status: true,
+              joinedAt: true,
+            },
+            take: 1,
+          },
+        },
+      });
+
+      expect(result).toEqual({
+        id: 'organization-1',
+        name: 'Organización Demo CIVIA',
+        description: 'Organización pública de prueba.',
+        logoUrl: null,
+        type: 'PUBLIC',
+        isMember: true,
+        membershipRole: 'MEMBER',
+        membershipStatus: 'ACTIVE',
+        joinedAt,
+      });
+    });
+
+    it('permite ver una organización pública sin membresía', async () => {
+      organizationFindFirstMock.mockResolvedValue({
+        id: 'organization-2',
+        name: 'Organización Pública Dos',
+        description: null,
+        logoUrl: null,
+        type: 'PUBLIC',
+        memberships: [],
+      });
+
+      const result = await service.findOneForUser(
+        'organization-2',
+        'user-1',
+      );
+
+      expect(result).toEqual({
+        id: 'organization-2',
+        name: 'Organización Pública Dos',
+        description: null,
+        logoUrl: null,
+        type: 'PUBLIC',
+        isMember: false,
+        membershipRole: null,
+        membershipStatus: null,
+        joinedAt: null,
+      });
+    });
+
+    it('permite ver una organización privada con membresía activa', async () => {
+      const joinedAt = new Date('2026-09-22T17:06:05.141Z');
+
+      organizationFindFirstMock.mockResolvedValue({
+        id: 'organization-private',
+        name: 'Organización Privada CIVIA',
+        description: 'Organización privada de prueba.',
+        logoUrl: null,
+        type: 'PRIVATE',
+        memberships: [
+          {
+            role: 'MEMBER',
+            status: 'ACTIVE',
+            joinedAt,
+          },
+        ],
+      });
+
+      const result = await service.findOneForUser(
+        'organization-private',
+        'user-1',
+      );
+
+      expect(result.isMember).toBe(true);
+      expect(result.membershipStatus).toBe('ACTIVE');
+      expect(result.type).toBe('PRIVATE');
+    });
+
+    it('rechaza una organización inexistente o sin acceso', async () => {
+      organizationFindFirstMock.mockResolvedValue(null);
+
+      await expect(
+        service.findOneForUser(
+          'organization-private',
+          'user-1',
+        ),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 });
