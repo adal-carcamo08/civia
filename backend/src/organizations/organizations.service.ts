@@ -1,4 +1,6 @@
 import {
+  ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -141,6 +143,74 @@ export class OrganizationsService {
       membershipRole: membership?.role ?? null,
       membershipStatus: membership?.status ?? null,
       joinedAt: membership?.joinedAt ?? null,
+    };
+  }
+
+  async joinPublic(organizationId: string, userId: string) {
+    const organization = await this.prisma.organization.findFirst({
+      where: {
+        id: organizationId,
+        active: true,
+      },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        logoUrl: true,
+        type: true,
+      },
+    });
+
+    if (!organization) {
+      throw new NotFoundException('Organización no encontrada.');
+    }
+
+    if (organization.type !== 'PUBLIC') {
+      throw new ForbiddenException(
+        'Esta organización requiere invitación o autorización.',
+      );
+    }
+
+    const existingMembership = await this.prisma.membership.findUnique({
+      where: {
+        userId_organizationId: {
+          userId,
+          organizationId,
+        },
+      },
+      select: {
+        id: true,
+        role: true,
+        status: true,
+      },
+    });
+
+    if (existingMembership) {
+      throw new ConflictException(
+        'Ya existe una membresía para esta organización.',
+      );
+    }
+
+    const membership = await this.prisma.membership.create({
+      data: {
+        userId,
+        organizationId,
+        role: 'MEMBER',
+        status: 'ACTIVE',
+      },
+      select: {
+        role: true,
+        status: true,
+        joinedAt: true,
+      },
+    });
+
+    return {
+      ...organization,
+      isMember: true,
+      membershipRole: membership.role,
+      membershipStatus: membership.status,
+      joinedAt: membership.joinedAt,
     };
   }
 }

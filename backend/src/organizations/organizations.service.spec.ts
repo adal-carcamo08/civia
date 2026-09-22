@@ -2,11 +2,17 @@ jest.mock('../prisma/prisma.service', () => ({
   PrismaService: class PrismaService {},
 }));
 
-import { NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { OrganizationsService } from './organizations.service';
 
 describe('OrganizationsService', () => {
   const membershipFindManyMock = jest.fn();
+  const membershipFindUniqueMock = jest.fn();
+  const membershipCreateMock = jest.fn();
   const organizationFindManyMock = jest.fn();
   const organizationFindFirstMock = jest.fn();
 
@@ -18,6 +24,8 @@ describe('OrganizationsService', () => {
     const prisma = {
       membership: {
         findMany: membershipFindManyMock,
+        findUnique: membershipFindUniqueMock,
+        create: membershipCreateMock,
       },
       organization: {
         findMany: organizationFindManyMock,
@@ -397,4 +405,120 @@ describe('OrganizationsService', () => {
       ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
-});
+
+  describe('joinPublic', () => {
+    it('permite unirse a una organización pública activa', async () => {
+      const joinedAt = new Date('2026-09-22T17:12:56.550Z');
+
+      organizationFindFirstMock.mockResolvedValue({
+        id: 'organization-public',
+        name: 'Organización Pública Dos',
+        description: 'Organización pública disponible para nuevos miembros.',
+        logoUrl: null,
+        type: 'PUBLIC',
+      });
+
+      membershipFindUniqueMock.mockResolvedValue(null);
+
+      membershipCreateMock.mockResolvedValue({
+        role: 'MEMBER',
+        status: 'ACTIVE',
+        joinedAt,
+      });
+
+      const result = await service.joinPublic(
+        'organization-public',
+        'user-1',
+      );
+
+      expect(membershipFindUniqueMock).toHaveBeenCalledWith({
+        where: {
+          userId_organizationId: {
+            userId: 'user-1',
+            organizationId: 'organization-public',
+          },
+        },
+        select: {
+          id: true,
+          role: true,
+          status: true,
+        },
+      });
+
+      expect(membershipCreateMock).toHaveBeenCalledWith({
+        data: {
+          userId: 'user-1',
+          organizationId: 'organization-public',
+          role: 'MEMBER',
+          status: 'ACTIVE',
+        },
+        select: {
+          role: true,
+          status: true,
+          joinedAt: true,
+        },
+      });
+
+      expect(result).toEqual({
+        id: 'organization-public',
+        name: 'Organización Pública Dos',
+        description: 'Organización pública disponible para nuevos miembros.',
+        logoUrl: null,
+        type: 'PUBLIC',
+        isMember: true,
+        membershipRole: 'MEMBER',
+        membershipStatus: 'ACTIVE',
+        joinedAt,
+      });
+    });
+
+    it('rechaza una membresía existente', async () => {
+      organizationFindFirstMock.mockResolvedValue({
+        id: 'organization-public',
+        name: 'Organización Pública Dos',
+        description: null,
+        logoUrl: null,
+        type: 'PUBLIC',
+      });
+
+      membershipFindUniqueMock.mockResolvedValue({
+        id: 'membership-1',
+        role: 'MEMBER',
+        status: 'ACTIVE',
+      });
+
+      await expect(
+        service.joinPublic('organization-public', 'user-1'),
+      ).rejects.toBeInstanceOf(ConflictException);
+
+      expect(membershipCreateMock).not.toHaveBeenCalled();
+    });
+
+    it('rechaza el ingreso directo a una organización privada', async () => {
+      organizationFindFirstMock.mockResolvedValue({
+        id: 'organization-private',
+        name: 'Organización Privada CIVIA',
+        description: null,
+        logoUrl: null,
+        type: 'PRIVATE',
+      });
+
+      await expect(
+        service.joinPublic('organization-private', 'user-1'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      expect(membershipFindUniqueMock).not.toHaveBeenCalled();
+      expect(membershipCreateMock).not.toHaveBeenCalled();
+    });
+
+    it('rechaza una organización inexistente o inactiva', async () => {
+      organizationFindFirstMock.mockResolvedValue(null);
+
+      await expect(
+        service.joinPublic('organization-missing', 'user-1'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+
+      expect(membershipFindUniqueMock).not.toHaveBeenCalled();
+      expect(membershipCreateMock).not.toHaveBeenCalled();
+    });
+  });});
