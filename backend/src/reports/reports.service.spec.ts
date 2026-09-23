@@ -11,6 +11,7 @@ import { ReportsService } from './reports.service';
 
 describe('ReportsService', () => {
   const membershipFindUniqueMock = jest.fn();
+  const membershipFindFirstMock = jest.fn();
   const categoryFindFirstMock = jest.fn();
   const reportCreateMock = jest.fn();
   const reportFindManyMock = jest.fn();
@@ -40,6 +41,7 @@ describe('ReportsService', () => {
     const prisma = {
       membership: {
         findUnique: membershipFindUniqueMock,
+        findFirst: membershipFindFirstMock,
       },
       category: {
         findFirst: categoryFindFirstMock,
@@ -498,5 +500,125 @@ describe('ReportsService', () => {
           },
         }),
       );
+    });
+  });
+  describe('findByOrganization', () => {
+    it('devuelve los reportes de una organización para un miembro activo', async () => {
+      const createdAt = new Date('2026-09-23T15:53:46.835Z');
+      const updatedAt = new Date('2026-09-23T15:53:46.835Z');
+
+      membershipFindFirstMock.mockResolvedValue({
+        id: 'membership-1',
+        role: 'MEMBER',
+      });
+
+      reportFindManyMock.mockResolvedValue([
+        {
+          id: 'report-1',
+          code: 'CIVIA-REPORT-1',
+          status: 'RECEIVED',
+          description:
+            'Existe una fuga de agua constante en la tubería principal.',
+          location: 'Entrada principal del edificio',
+          resolvedAt: null,
+          createdAt,
+          updatedAt,
+          reporter: {
+            id: 'user-1',
+            fullName: 'Usuario CIVIA',
+          },
+          category: {
+            id: 'category-1',
+            name: 'Fuga de agua',
+          },
+          department: {
+            id: 'department-1',
+            name: 'Mantenimiento',
+          },
+          assignedTo: null,
+        },
+      ]);
+
+      const result = await service.findByOrganization(
+        'organization-1',
+        'user-1',
+      );
+
+      expect(membershipFindFirstMock).toHaveBeenCalledWith({
+        where: {
+          userId: 'user-1',
+          organizationId: 'organization-1',
+          status: 'ACTIVE',
+          organization: {
+            active: true,
+          },
+        },
+        select: {
+          id: true,
+          role: true,
+        },
+      });
+
+      expect(reportFindManyMock).toHaveBeenCalledWith({
+        where: {
+          organizationId: 'organization-1',
+        },
+        select: {
+          id: true,
+          code: true,
+          status: true,
+          description: true,
+          location: true,
+          resolvedAt: true,
+          createdAt: true,
+          updatedAt: true,
+          reporter: {
+            select: {
+              id: true,
+              fullName: true,
+            },
+          },
+          category: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+          department: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+          assignedTo: {
+            select: {
+              id: true,
+              fullName: true,
+            },
+          },
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+      });
+
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('report-1');
+      expect(result[0].reporter.fullName).toBe('Usuario CIVIA');
+      expect(result[0].category.name).toBe('Fuga de agua');
+      expect(result[0].department?.name).toBe('Mantenimiento');
+    });
+
+    it('rechaza consultar reportes si el usuario no es miembro activo', async () => {
+      membershipFindFirstMock.mockResolvedValue(null);
+
+      await expect(
+        service.findByOrganization(
+          'organization-1',
+          'user-2',
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      expect(reportFindManyMock).not.toHaveBeenCalled();
     });
   });});

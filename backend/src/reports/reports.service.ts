@@ -248,4 +248,72 @@ export class ReportsService {
     }
 
     return report;
+  }
+  async findByOrganization(
+    organizationId: string,
+    userId: string,
+  ) {
+    const membership = await this.prisma.membership.findFirst({
+      where: {
+        userId,
+        organizationId,
+        status: 'ACTIVE',
+        organization: {
+          active: true,
+        },
+      },
+      select: {
+        id: true,
+        role: true,
+      },
+    });
+
+    if (!membership) {
+      throw new ForbiddenException(
+        'Debes ser miembro activo de la organización para consultar sus reportes.',
+      );
+    }
+
+    return this.prisma.report.findMany({
+      where: {
+        organizationId,
+      },
+      select: {
+        id: true,
+        code: true,
+        status: true,
+        description: true,
+        location: true,
+        resolvedAt: true,
+        createdAt: true,
+        updatedAt: true,
+        reporter: {
+          select: {
+            id: true,
+            fullName: true,
+          },
+        },
+        category: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        department: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        assignedTo: {
+          select: {
+            id: true,
+            fullName: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
   }}
