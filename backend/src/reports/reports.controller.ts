@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Param,
   Post,
   Req,
   UseGuards,
@@ -33,4 +34,14 @@ export class ReportsController {
   @Get('mine')
   findMine(@Req() request: AuthenticatedRequest) {
     return this.reportsService.findMine(request.user.id);
+  }
+  @Get(':id')
+  findOne(
+    @Param('id') reportId: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.reportsService.findOneMine(
+      reportId,
+      request.user.id,
+    );
   }}

@@ -14,6 +14,7 @@ describe('ReportsService', () => {
   const categoryFindFirstMock = jest.fn();
   const reportCreateMock = jest.fn();
   const reportFindManyMock = jest.fn();
+  const reportFindFirstMock = jest.fn();
   const historyCreateMock = jest.fn();
   const transactionMock = jest.fn();
 
@@ -45,6 +46,7 @@ describe('ReportsService', () => {
       },
       report: {
         findMany: reportFindManyMock,
+        findFirst: reportFindFirstMock,
       },
       $transaction: transactionMock,
     };
@@ -333,6 +335,165 @@ describe('ReportsService', () => {
       expect(reportFindManyMock).toHaveBeenCalledWith(
         expect.objectContaining({
           where: {
+            reporterId: 'user-2',
+          },
+        }),
+      );
+    });
+  });
+  describe('findOneMine', () => {
+    it('devuelve el detalle completo de un reporte del usuario', async () => {
+      const createdAt = new Date('2026-09-23T15:53:46.835Z');
+      const updatedAt = new Date('2026-09-23T15:53:46.835Z');
+      const historyCreatedAt = new Date('2026-09-23T15:53:46.858Z');
+
+      reportFindFirstMock.mockResolvedValue({
+        id: 'report-1',
+        code: 'CIVIA-REPORT-1',
+        status: 'RECEIVED',
+        description:
+          'Existe una fuga de agua constante en la tubería principal.',
+        location: 'Entrada principal del edificio',
+        latitude: null,
+        longitude: null,
+        resolvedAt: null,
+        createdAt,
+        updatedAt,
+        organization: {
+          id: 'organization-1',
+          name: 'Organización Demo CIVIA',
+        },
+        category: {
+          id: 'category-1',
+          name: 'Fuga de agua',
+        },
+        department: {
+          id: 'department-1',
+          name: 'Mantenimiento',
+        },
+        assignedTo: null,
+        attachments: [],
+        history: [
+          {
+            id: 'history-1',
+            fromStatus: null,
+            toStatus: 'RECEIVED',
+            note: 'Reporte creado.',
+            createdAt: historyCreatedAt,
+            changedBy: {
+              id: 'user-1',
+              fullName: 'Usuario CIVIA',
+            },
+          },
+        ],
+      });
+
+      const result = await service.findOneMine(
+        'report-1',
+        'user-1',
+      );
+
+      expect(reportFindFirstMock).toHaveBeenCalledWith({
+        where: {
+          id: 'report-1',
+          reporterId: 'user-1',
+        },
+        select: {
+          id: true,
+          code: true,
+          status: true,
+          description: true,
+          location: true,
+          latitude: true,
+          longitude: true,
+          resolvedAt: true,
+          createdAt: true,
+          updatedAt: true,
+          organization: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+          category: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+          department: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+          assignedTo: {
+            select: {
+              id: true,
+              fullName: true,
+            },
+          },
+          attachments: {
+            select: {
+              id: true,
+              url: true,
+              fileName: true,
+              mimeType: true,
+              createdAt: true,
+            },
+            orderBy: {
+              createdAt: 'asc',
+            },
+          },
+          history: {
+            select: {
+              id: true,
+              fromStatus: true,
+              toStatus: true,
+              note: true,
+              createdAt: true,
+              changedBy: {
+                select: {
+                  id: true,
+                  fullName: true,
+                },
+              },
+            },
+            orderBy: {
+              createdAt: 'asc',
+            },
+          },
+        },
+      });
+
+      expect(result.id).toBe('report-1');
+      expect(result.status).toBe('RECEIVED');
+      expect(result.organization.name).toBe(
+        'Organización Demo CIVIA',
+      );
+      expect(result.category.name).toBe('Fuga de agua');
+      expect(result.department?.name).toBe('Mantenimiento');
+      expect(result.history).toHaveLength(1);
+      expect(result.history[0].toStatus).toBe('RECEIVED');
+      expect(result.history[0].changedBy?.fullName).toBe(
+        'Usuario CIVIA',
+      );
+    });
+
+    it('rechaza un reporte inexistente o perteneciente a otro usuario', async () => {
+      reportFindFirstMock.mockResolvedValue(null);
+
+      await expect(
+        service.findOneMine(
+          'report-1',
+          'user-2',
+        ),
+      ).rejects.toBeInstanceOf(NotFoundException);
+
+      expect(reportFindFirstMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            id: 'report-1',
             reporterId: 'user-2',
           },
         }),

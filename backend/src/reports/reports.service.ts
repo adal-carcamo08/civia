@@ -168,4 +168,84 @@ export class ReportsService {
         createdAt: 'desc',
       },
     });
+  }
+  async findOneMine(reportId: string, userId: string) {
+    const report = await this.prisma.report.findFirst({
+      where: {
+        id: reportId,
+        reporterId: userId,
+      },
+      select: {
+        id: true,
+        code: true,
+        status: true,
+        description: true,
+        location: true,
+        latitude: true,
+        longitude: true,
+        resolvedAt: true,
+        createdAt: true,
+        updatedAt: true,
+        organization: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        category: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        department: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        assignedTo: {
+          select: {
+            id: true,
+            fullName: true,
+          },
+        },
+        attachments: {
+          select: {
+            id: true,
+            url: true,
+            fileName: true,
+            mimeType: true,
+            createdAt: true,
+          },
+          orderBy: {
+            createdAt: 'asc',
+          },
+        },
+        history: {
+          select: {
+            id: true,
+            fromStatus: true,
+            toStatus: true,
+            note: true,
+            createdAt: true,
+            changedBy: {
+              select: {
+                id: true,
+                fullName: true,
+              },
+            },
+          },
+          orderBy: {
+            createdAt: 'asc',
+          },
+        },
+      },
+    });
+
+    if (!report) {
+      throw new NotFoundException('Reporte no encontrado.');
+    }
+
+    return report;
   }}
