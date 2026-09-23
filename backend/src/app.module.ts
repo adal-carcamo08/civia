@@ -4,6 +4,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { HealthModule } from './health/health.module';
+import { InvitationsModule } from './invitations/invitations.module';
 import { OrganizationsModule } from './organizations/organizations.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ReportsModule } from './reports/reports.module';
@@ -16,6 +17,7 @@ import { ReportsModule } from './reports/reports.module';
     PrismaModule,
     HealthModule,
     AuthModule,
+    InvitationsModule,
     OrganizationsModule,
     ReportsModule,
   ],
