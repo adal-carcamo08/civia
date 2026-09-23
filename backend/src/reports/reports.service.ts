@@ -5,6 +5,13 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
+import {
+  mkdir,
+  readFile,
+  unlink,
+  writeFile,
+} from 'fs/promises';
+import { extname, join } from 'path';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateReportDto } from './dto/create-report.dto';
 
@@ -316,4 +323,132 @@ export class ReportsService {
         createdAt: 'desc',
       },
     });
+  }
+  async addAttachment(
+    reportId: string,
+    userId: string,
+    file: Express.Multer.File,
+  ) {
+    const report = await this.prisma.report.findFirst({
+      where: {
+        id: reportId,
+        reporterId: userId,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!report) {
+      throw new NotFoundException('Reporte no encontrado.');
+    }
+
+    const allowedMimeTypes: Record<string, string> = {
+      'image/jpeg': '.jpg',
+      'image/png': '.png',
+      'image/webp': '.webp',
+    };
+
+    const extension = allowedMimeTypes[file.mimetype];
+
+    if (!extension) {
+      throw new BadRequestException(
+        'Solo se permiten imágenes JPEG, PNG o WEBP.',
+      );
+    }
+
+    const attachmentId = randomUUID();
+    const directory = join(
+      process.cwd(),
+      'uploads',
+      'reports',
+      reportId,
+    );
+
+    await mkdir(directory, {
+      recursive: true,
+    });
+
+    const storedFileName = `${attachmentId}${extension}`;
+    const filePath = join(directory, storedFileName);
+
+    await writeFile(filePath, file.buffer);
+
+    try {
+      return await this.prisma.reportAttachment.create({
+        data: {
+          id: attachmentId,
+          reportId,
+          url: `/reports/${reportId}/attachments/${attachmentId}/file`,
+          fileName:
+            file.originalname ||
+            `evidencia${extname(storedFileName)}`,
+          mimeType: file.mimetype,
+        },
+        select: {
+          id: true,
+          url: true,
+          fileName: true,
+          mimeType: true,
+          createdAt: true,
+        },
+      });
+    } catch (error) {
+      await unlink(filePath).catch(() => undefined);
+      throw error;
+    }
+  }
+  async getAttachmentFile(
+    reportId: string,
+    attachmentId: string,
+    userId: string,
+  ) {
+    const attachment = await this.prisma.reportAttachment.findFirst({
+      where: {
+        id: attachmentId,
+        reportId,
+        report: {
+          reporterId: userId,
+        },
+      },
+      select: {
+        id: true,
+        mimeType: true,
+      },
+    });
+
+    if (!attachment || !attachment.mimeType) {
+      throw new NotFoundException('Evidencia no encontrada.');
+    }
+
+    const extensions: Record<string, string> = {
+      'image/jpeg': '.jpg',
+      'image/png': '.png',
+      'image/webp': '.webp',
+    };
+
+    const extension = extensions[attachment.mimeType];
+
+    if (!extension) {
+      throw new NotFoundException('Evidencia no encontrada.');
+    }
+
+    const filePath = join(
+      process.cwd(),
+      'uploads',
+      'reports',
+      reportId,
+      `${attachment.id}${extension}`,
+    );
+
+    try {
+      const buffer = await readFile(filePath);
+
+      return {
+        buffer,
+        mimeType: attachment.mimeType,
+      };
+    } catch {
+      throw new NotFoundException('Evidencia no encontrada.');
+    }
   }}

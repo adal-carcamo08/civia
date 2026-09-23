@@ -2,11 +2,25 @@ jest.mock('../prisma/prisma.service', () => ({
   PrismaService: class PrismaService {},
 }));
 
+jest.mock('fs/promises', () => ({
+  mkdir: jest.fn(),
+  readFile: jest.fn(),
+  unlink: jest.fn(),
+  writeFile: jest.fn(),
+}));
+
 import {
   BadRequestException,
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
+import {
+  mkdir,
+  readFile,
+  unlink,
+  writeFile,
+} from 'fs/promises';
+import { join } from 'path';
 import { ReportsService } from './reports.service';
 
 describe('ReportsService', () => {
@@ -16,8 +30,15 @@ describe('ReportsService', () => {
   const reportCreateMock = jest.fn();
   const reportFindManyMock = jest.fn();
   const reportFindFirstMock = jest.fn();
+  const reportAttachmentFindFirstMock = jest.fn();
+  const reportAttachmentCreateMock = jest.fn();
   const historyCreateMock = jest.fn();
   const transactionMock = jest.fn();
+
+  const mkdirMock = mkdir as jest.MockedFunction<typeof mkdir>;
+  const readFileMock = readFile as jest.MockedFunction<typeof readFile>;
+  const unlinkMock = unlink as jest.MockedFunction<typeof unlink>;
+  const writeFileMock = writeFile as jest.MockedFunction<typeof writeFile>;
 
   let service: ReportsService;
 
@@ -49,6 +70,10 @@ describe('ReportsService', () => {
       report: {
         findMany: reportFindManyMock,
         findFirst: reportFindFirstMock,
+      },
+      reportAttachment: {
+        findFirst: reportAttachmentFindFirstMock,
+        create: reportAttachmentCreateMock,
       },
       $transaction: transactionMock,
     };
@@ -620,5 +645,203 @@ describe('ReportsService', () => {
       ).rejects.toBeInstanceOf(ForbiddenException);
 
       expect(reportFindManyMock).not.toHaveBeenCalled();
+    });
+  });
+  describe('attachments', () => {
+    it('guarda una imagen y crea el registro del adjunto', async () => {
+      reportFindFirstMock.mockResolvedValue({
+        id: 'report-1',
+      });
+
+      mkdirMock.mockResolvedValue(undefined);
+      writeFileMock.mockResolvedValue(undefined);
+
+      reportAttachmentCreateMock.mockImplementation(
+        async ({ data }) => ({
+          id: data.id,
+          url: data.url,
+          fileName: data.fileName,
+          mimeType: data.mimeType,
+          createdAt: new Date('2026-09-23T16:20:08.489Z'),
+        }),
+      );
+
+      const file = {
+        buffer: Buffer.from('image-data'),
+        mimetype: 'image/png',
+        originalname: 'evidencia.png',
+      } as Express.Multer.File;
+
+      const result = await service.addAttachment(
+        'report-1',
+        'user-1',
+        file,
+      );
+
+      expect(reportFindFirstMock).toHaveBeenCalledWith({
+        where: {
+          id: 'report-1',
+          reporterId: 'user-1',
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      expect(mkdirMock).toHaveBeenCalledWith(
+        join(
+          process.cwd(),
+          'uploads',
+          'reports',
+          'report-1',
+        ),
+        {
+          recursive: true,
+        },
+      );
+
+      expect(writeFileMock).toHaveBeenCalledTimes(1);
+
+      const createArgs =
+        reportAttachmentCreateMock.mock.calls[0][0];
+
+      expect(createArgs.data.id).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+      );
+
+      expect(createArgs.data.reportId).toBe('report-1');
+      expect(createArgs.data.fileName).toBe('evidencia.png');
+      expect(createArgs.data.mimeType).toBe('image/png');
+      expect(createArgs.data.url).toBe(
+        `/reports/report-1/attachments/${createArgs.data.id}/file`,
+      );
+
+      expect(result.id).toBe(createArgs.data.id);
+    });
+
+    it('rechaza agregar evidencia a un reporte ajeno o inexistente', async () => {
+      reportFindFirstMock.mockResolvedValue(null);
+
+      const file = {
+        buffer: Buffer.from('image-data'),
+        mimetype: 'image/png',
+        originalname: 'evidencia.png',
+      } as Express.Multer.File;
+
+      await expect(
+        service.addAttachment(
+          'report-1',
+          'user-2',
+          file,
+        ),
+      ).rejects.toBeInstanceOf(NotFoundException);
+
+      expect(mkdirMock).not.toHaveBeenCalled();
+      expect(writeFileMock).not.toHaveBeenCalled();
+      expect(reportAttachmentCreateMock).not.toHaveBeenCalled();
+    });
+
+    it('rechaza un tipo de archivo no permitido', async () => {
+      reportFindFirstMock.mockResolvedValue({
+        id: 'report-1',
+      });
+
+      const file = {
+        buffer: Buffer.from('document-data'),
+        mimetype: 'application/pdf',
+        originalname: 'documento.pdf',
+      } as Express.Multer.File;
+
+      await expect(
+        service.addAttachment(
+          'report-1',
+          'user-1',
+          file,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(writeFileMock).not.toHaveBeenCalled();
+      expect(reportAttachmentCreateMock).not.toHaveBeenCalled();
+    });
+
+    it('devuelve el archivo de una evidencia autorizada', async () => {
+      const fileBuffer = Buffer.from('image-data');
+
+      reportAttachmentFindFirstMock.mockResolvedValue({
+        id: 'attachment-1',
+        mimeType: 'image/png',
+      });
+
+      readFileMock.mockResolvedValue(fileBuffer);
+
+      const result = await service.getAttachmentFile(
+        'report-1',
+        'attachment-1',
+        'user-1',
+      );
+
+      expect(reportAttachmentFindFirstMock).toHaveBeenCalledWith({
+        where: {
+          id: 'attachment-1',
+          reportId: 'report-1',
+          report: {
+            reporterId: 'user-1',
+          },
+        },
+        select: {
+          id: true,
+          mimeType: true,
+        },
+      });
+
+      expect(readFileMock).toHaveBeenCalledWith(
+        join(
+          process.cwd(),
+          'uploads',
+          'reports',
+          'report-1',
+          'attachment-1.png',
+        ),
+      );
+
+      expect(result).toEqual({
+        buffer: fileBuffer,
+        mimeType: 'image/png',
+      });
+    });
+
+    it('rechaza descargar una evidencia ajena o inexistente', async () => {
+      reportAttachmentFindFirstMock.mockResolvedValue(null);
+
+      await expect(
+        service.getAttachmentFile(
+          'report-1',
+          'attachment-1',
+          'user-2',
+        ),
+      ).rejects.toBeInstanceOf(NotFoundException);
+
+      expect(readFileMock).not.toHaveBeenCalled();
+    });
+
+    it('responde como no encontrada si falta el archivo físico', async () => {
+      reportAttachmentFindFirstMock.mockResolvedValue({
+        id: 'attachment-1',
+        mimeType: 'image/png',
+      });
+
+      readFileMock.mockRejectedValue(
+        new Error('ENOENT'),
+      );
+
+      await expect(
+        service.getAttachmentFile(
+          'report-1',
+          'attachment-1',
+          'user-1',
+        ),
+      ).rejects.toBeInstanceOf(NotFoundException);
+
+      expect(unlinkMock).not.toHaveBeenCalled();
     });
   });});
