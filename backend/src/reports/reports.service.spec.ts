@@ -13,6 +13,7 @@ describe('ReportsService', () => {
   const membershipFindUniqueMock = jest.fn();
   const categoryFindFirstMock = jest.fn();
   const reportCreateMock = jest.fn();
+  const reportFindManyMock = jest.fn();
   const historyCreateMock = jest.fn();
   const transactionMock = jest.fn();
 
@@ -41,6 +42,9 @@ describe('ReportsService', () => {
       },
       category: {
         findFirst: categoryFindFirstMock,
+      },
+      report: {
+        findMany: reportFindManyMock,
       },
       $transaction: transactionMock,
     };
@@ -227,4 +231,111 @@ describe('ReportsService', () => {
 
     expect(transactionMock).not.toHaveBeenCalled();
   });
-});
+
+  describe('findMine', () => {
+    it('devuelve únicamente los reportes del usuario autenticado ordenados por fecha', async () => {
+      const createdAt = new Date('2026-09-23T15:53:46.835Z');
+      const updatedAt = new Date('2026-09-23T15:53:46.835Z');
+
+      reportFindManyMock.mockResolvedValue([
+        {
+          id: 'report-1',
+          code: 'CIVIA-REPORT-1',
+          status: 'RECEIVED',
+          description: 'Existe una fuga de agua constante.',
+          location: 'Entrada principal',
+          latitude: null,
+          longitude: null,
+          resolvedAt: null,
+          createdAt,
+          updatedAt,
+          organization: {
+            id: 'organization-1',
+            name: 'Organización Demo CIVIA',
+          },
+          category: {
+            id: 'category-1',
+            name: 'Fuga de agua',
+          },
+          department: {
+            id: 'department-1',
+            name: 'Mantenimiento',
+          },
+          attachments: [],
+        },
+      ]);
+
+      const result = await service.findMine('user-1');
+
+      expect(reportFindManyMock).toHaveBeenCalledWith({
+        where: {
+          reporterId: 'user-1',
+        },
+        select: {
+          id: true,
+          code: true,
+          status: true,
+          description: true,
+          location: true,
+          latitude: true,
+          longitude: true,
+          resolvedAt: true,
+          createdAt: true,
+          updatedAt: true,
+          organization: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+          category: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+          department: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+          attachments: {
+            select: {
+              id: true,
+              url: true,
+              fileName: true,
+              mimeType: true,
+            },
+            orderBy: {
+              createdAt: 'asc',
+            },
+          },
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+      });
+
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('report-1');
+      expect(result[0].organization.name).toBe(
+        'Organización Demo CIVIA',
+      );
+    });
+
+    it('devuelve un arreglo vacío cuando el usuario no tiene reportes', async () => {
+      reportFindManyMock.mockResolvedValue([]);
+
+      const result = await service.findMine('user-2');
+
+      expect(result).toEqual([]);
+      expect(reportFindManyMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            reporterId: 'user-2',
+          },
+        }),
+      );
+    });
+  });});

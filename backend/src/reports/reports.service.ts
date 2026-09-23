@@ -117,4 +117,55 @@ export class ReportsService {
       return report;
     });
   }
-}
+
+  async findMine(userId: string) {
+    return this.prisma.report.findMany({
+      where: {
+        reporterId: userId,
+      },
+      select: {
+        id: true,
+        code: true,
+        status: true,
+        description: true,
+        location: true,
+        latitude: true,
+        longitude: true,
+        resolvedAt: true,
+        createdAt: true,
+        updatedAt: true,
+        organization: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        category: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        department: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        attachments: {
+          select: {
+            id: true,
+            url: true,
+            fileName: true,
+            mimeType: true,
+          },
+          orderBy: {
+            createdAt: 'asc',
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+  }}

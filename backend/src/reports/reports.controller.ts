@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Get,
   Post,
   Req,
   UseGuards,
@@ -28,4 +29,8 @@ export class ReportsController {
   ) {
     return this.reportsService.create(request.user.id, dto);
   }
-}
+
+  @Get('mine')
+  findMine(@Req() request: AuthenticatedRequest) {
+    return this.reportsService.findMine(request.user.id);
+  }}
