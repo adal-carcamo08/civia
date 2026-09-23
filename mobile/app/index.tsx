@@ -1,40 +1,22 @@
 import { router } from 'expo-router';
 import { useEffect } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { useAuth } from '../contexts/auth-context';
 
-export default function SplashScreen() {
+export default function IndexScreen() {
+  const { user, isRestoring } = useAuth();
+
   useEffect(() => {
-    const timeout = setTimeout(() => {
-      router.replace('/login');
-    }, 1500);
+    if (isRestoring) {
+      return;
+    }
 
-    return () => clearTimeout(timeout);
-  }, []);
+    if (user) {
+      router.replace('/organizations');
+      return;
+    }
 
-  return (
-    <View style={styles.container}>
-      <Text style={styles.logo}>CIVIA</Text>
-      <Text style={styles.subtitle}>Gestión inteligente de reportes</Text>
-    </View>
-  );
+    router.replace('/login');
+  }, [isRestoring, user]);
+
+  return null;
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F7F9FB',
-  },
-  logo: {
-    fontSize: 48,
-    fontWeight: '700',
-    color: '#17365D',
-    letterSpacing: 1,
-  },
-  subtitle: {
-    marginTop: 12,
-    fontSize: 18,
-    color: '#667085',
-  },
-});

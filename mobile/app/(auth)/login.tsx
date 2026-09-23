@@ -1,6 +1,7 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -11,16 +12,25 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useAuth } from '../../contexts/auth-context';
 
 export default function LoginScreen() {
+  const { signIn } = useAuth();
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const [emailError, setEmailError] = useState('');
   const [passwordError, setPasswordError] = useState('');
   const [authError, setAuthError] = useState('');
 
-  const validateForm = () => {
+  const handleLogin = async () => {
+    if (isSubmitting) {
+      return;
+    }
+
     let isValid = true;
 
     setEmailError('');
@@ -41,7 +51,9 @@ export default function LoginScreen() {
       setPasswordError('Ingresa tu contraseña.');
       isValid = false;
     } else if (password.length < 8) {
-      setPasswordError('La contraseña debe tener al menos 8 caracteres.');
+      setPasswordError(
+        'La contraseña debe tener al menos 8 caracteres.'
+      );
       isValid = false;
     }
 
@@ -49,15 +61,29 @@ export default function LoginScreen() {
       return;
     }
 
-    if (
-      normalizedEmail.toLowerCase() === 'demo@civia.com' &&
-      password === 'Civia123'
-    ) {
-      router.replace('/organizations');
-      return;
-    }
+    setIsSubmitting(true);
 
-    setAuthError('Correo o contraseña incorrectos.');
+    try {
+      await signIn(normalizedEmail, password);
+      router.replace('/organizations');
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : '';
+
+      if (
+        message.includes('401') ||
+        message.toLowerCase().includes('credencial') ||
+        message.toLowerCase().includes('unauthorized')
+      ) {
+        setAuthError('Correo o contraseña incorrectos.');
+      } else {
+        setAuthError(
+          'No se pudo iniciar sesión. Verifica tu conexión e inténtalo nuevamente.'
+        );
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -92,6 +118,10 @@ export default function LoginScreen() {
                     if (emailError) {
                       setEmailError('');
                     }
+
+                    if (authError) {
+                      setAuthError('');
+                    }
                   }}
                   placeholder="nombre@correo.com"
                   placeholderTextColor="#98A2B3"
@@ -101,6 +131,7 @@ export default function LoginScreen() {
                   autoComplete="email"
                   textContentType="emailAddress"
                   returnKeyType="next"
+                  editable={!isSubmitting}
                   style={[
                     styles.input,
                     emailError ? styles.inputError : undefined,
@@ -129,6 +160,10 @@ export default function LoginScreen() {
                       if (passwordError) {
                         setPasswordError('');
                       }
+
+                      if (authError) {
+                        setAuthError('');
+                      }
                     }}
                     placeholder="Ingresa tu contraseña"
                     placeholderTextColor="#98A2B3"
@@ -138,12 +173,18 @@ export default function LoginScreen() {
                     autoComplete="password"
                     textContentType="password"
                     returnKeyType="done"
-                    onSubmitEditing={validateForm}
+                    editable={!isSubmitting}
+                    onSubmitEditing={() => {
+                      void handleLogin();
+                    }}
                     style={styles.passwordInput}
                   />
 
                   <Pressable
-                    onPress={() => setShowPassword((current) => !current)}
+                    onPress={() =>
+                      setShowPassword((current) => !current)
+                    }
+                    disabled={isSubmitting}
                     hitSlop={10}
                   >
                     <Text style={styles.passwordToggle}>
@@ -160,22 +201,47 @@ export default function LoginScreen() {
               {authError ? (
                 <Text style={styles.authError}>{authError}</Text>
               ) : null}
+
               <Pressable
-                onPress={validateForm}
+                onPress={() => {
+                  void handleLogin();
+                }}
+                disabled={isSubmitting}
                 style={({ pressed }) => [
                   styles.primaryButton,
-                  pressed ? styles.primaryButtonPressed : undefined,
+                  pressed && !isSubmitting
+                    ? styles.primaryButtonPressed
+                    : undefined,
+                  isSubmitting
+                    ? styles.primaryButtonDisabled
+                    : undefined,
                 ]}
               >
-                <Text style={styles.primaryButtonText}>Iniciar sesión</Text>
+                {isSubmitting ? (
+                  <ActivityIndicator
+                    size="small"
+                    color="#FFFFFF"
+                  />
+                ) : (
+                  <Text style={styles.primaryButtonText}>
+                    Iniciar sesión
+                  </Text>
+                )}
               </Pressable>
             </View>
 
             <View style={styles.registerRow}>
-              <Text style={styles.helperText}>¿Aún no tienes una cuenta? </Text>
+              <Text style={styles.helperText}>
+                ¿Aún no tienes una cuenta?{' '}
+              </Text>
 
-              <Pressable onPress={() => router.push('/register')}>
-                <Text style={styles.registerLink}>Crear cuenta</Text>
+              <Pressable
+                onPress={() => router.push('/register')}
+                disabled={isSubmitting}
+              >
+                <Text style={styles.registerLink}>
+                  Crear cuenta
+                </Text>
               </Pressable>
             </View>
           </View>
@@ -288,6 +354,9 @@ const styles = StyleSheet.create({
   },
   primaryButtonPressed: {
     opacity: 0.88,
+  },
+  primaryButtonDisabled: {
+    opacity: 0.7,
   },
   primaryButtonText: {
     fontSize: 16,
