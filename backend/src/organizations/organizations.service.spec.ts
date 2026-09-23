@@ -15,6 +15,7 @@ describe('OrganizationsService', () => {
   const membershipCreateMock = jest.fn();
   const organizationFindManyMock = jest.fn();
   const organizationFindFirstMock = jest.fn();
+  const categoryFindManyMock = jest.fn();
 
   let service: OrganizationsService;
 
@@ -30,6 +31,9 @@ describe('OrganizationsService', () => {
       organization: {
         findMany: organizationFindManyMock,
         findFirst: organizationFindFirstMock,
+      },
+      category: {
+        findMany: categoryFindManyMock,
       },
     };
 
@@ -520,5 +524,113 @@ describe('OrganizationsService', () => {
 
       expect(membershipFindUniqueMock).not.toHaveBeenCalled();
       expect(membershipCreateMock).not.toHaveBeenCalled();
+    });
+  });
+  describe('findCategoriesForUser', () => {
+    it('devuelve solo las categorías activas de una organización accesible', async () => {
+      organizationFindFirstMock.mockResolvedValue({
+        id: 'organization-1',
+        name: 'Organización Demo CIVIA',
+        description: null,
+        logoUrl: null,
+        type: 'PUBLIC',
+        memberships: [
+          {
+            role: 'MEMBER',
+            status: 'ACTIVE',
+            joinedAt: new Date('2026-09-22T16:47:38.594Z'),
+          },
+        ],
+      });
+
+      categoryFindManyMock.mockResolvedValue([
+        {
+          id: 'category-1',
+          name: 'Alumbrado público',
+          description:
+            'Reportes relacionados con iluminación y luminarias.',
+          department: {
+            id: 'department-1',
+            name: 'Mantenimiento',
+          },
+        },
+        {
+          id: 'category-2',
+          name: 'Fuga de agua',
+          description:
+            'Reportes relacionados con fugas o desperdicio de agua.',
+          department: {
+            id: 'department-1',
+            name: 'Mantenimiento',
+          },
+        },
+      ]);
+
+      const result = await service.findCategoriesForUser(
+        'organization-1',
+        'user-1',
+      );
+
+      expect(categoryFindManyMock).toHaveBeenCalledWith({
+        where: {
+          organizationId: 'organization-1',
+          active: true,
+        },
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          department: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+        orderBy: {
+          name: 'asc',
+        },
+      });
+
+      expect(result).toHaveLength(2);
+      expect(result[0].name).toBe('Alumbrado público');
+      expect(result[1].name).toBe('Fuga de agua');
+      expect(result[0].department).toEqual({
+        id: 'department-1',
+        name: 'Mantenimiento',
+      });
+    });
+
+    it('devuelve un arreglo vacío cuando no existen categorías activas', async () => {
+      organizationFindFirstMock.mockResolvedValue({
+        id: 'organization-1',
+        name: 'Organización Demo CIVIA',
+        description: null,
+        logoUrl: null,
+        type: 'PUBLIC',
+        memberships: [],
+      });
+
+      categoryFindManyMock.mockResolvedValue([]);
+
+      const result = await service.findCategoriesForUser(
+        'organization-1',
+        'user-1',
+      );
+
+      expect(result).toEqual([]);
+    });
+
+    it('rechaza consultar categorías de una organización privada sin acceso', async () => {
+      organizationFindFirstMock.mockResolvedValue(null);
+
+      await expect(
+        service.findCategoriesForUser(
+          'organization-private',
+          'user-1',
+        ),
+      ).rejects.toBeInstanceOf(NotFoundException);
+
+      expect(categoryFindManyMock).not.toHaveBeenCalled();
     });
   });});

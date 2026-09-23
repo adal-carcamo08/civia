@@ -213,4 +213,31 @@ export class OrganizationsService {
       joinedAt: membership.joinedAt,
     };
   }
-}
+
+  async findCategoriesForUser(
+    organizationId: string,
+    userId: string,
+  ) {
+    await this.findOneForUser(organizationId, userId);
+
+    return this.prisma.category.findMany({
+      where: {
+        organizationId,
+        active: true,
+      },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        department: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+      orderBy: {
+        name: 'asc',
+      },
+    });
+  }}

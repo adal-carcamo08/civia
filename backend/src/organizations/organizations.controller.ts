@@ -54,4 +54,14 @@ export class OrganizationsController {
       request.user.id,
     );
   }
-}
+
+  @Get(':id/categories')
+  findCategories(
+    @Param('id') organizationId: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.organizationsService.findCategoriesForUser(
+      organizationId,
+      request.user.id,
+    );
+  }}
