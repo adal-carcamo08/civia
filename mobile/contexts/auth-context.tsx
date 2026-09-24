@@ -8,7 +8,10 @@ import {
   useMemo,
   useState,
 } from 'react';
-import { apiRequest } from '../services/api';
+import {
+  ApiError,
+  apiRequest,
+} from '../services/api';
 
 const TOKEN_KEY = 'civia_access_token';
 
@@ -58,14 +61,22 @@ export function AuthProvider({
     let mounted = true;
 
     const restoreSession = async () => {
-      try {
-        const storedToken =
-          await SecureStore.getItemAsync(TOKEN_KEY);
+      const storedToken =
+        await SecureStore.getItemAsync(TOKEN_KEY);
 
-        if (!storedToken) {
-          return;
+      if (!storedToken) {
+        if (mounted) {
+          setIsRestoring(false);
         }
 
+        return;
+      }
+
+      if (mounted) {
+        setToken(storedToken);
+      }
+
+      try {
         const currentUser = await apiRequest<AuthUser>(
           '/auth/me',
           {
@@ -79,14 +90,18 @@ export function AuthProvider({
           return;
         }
 
-        setToken(storedToken);
         setUser(currentUser);
-      } catch {
-        await SecureStore.deleteItemAsync(TOKEN_KEY);
+      } catch (error) {
+        if (
+          error instanceof ApiError &&
+          error.status === 401
+        ) {
+          await SecureStore.deleteItemAsync(TOKEN_KEY);
 
-        if (mounted) {
-          setToken(null);
-          setUser(null);
+          if (mounted) {
+            setToken(null);
+            setUser(null);
+          }
         }
       } finally {
         if (mounted) {
@@ -154,7 +169,13 @@ export function AuthProvider({
 
       return currentUser;
     } catch (error) {
-      await clearSession();
+      if (
+        error instanceof ApiError &&
+        error.status === 401
+      ) {
+        await clearSession();
+      }
+
       throw error;
     }
   }, [clearSession, token]);
