@@ -15,6 +15,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { AppBottomNav } from '../../../components/app-bottom-nav';
 import { useAuth } from '../../../contexts/auth-context';
 import { apiRequest } from '../../../services/api';
 
@@ -29,7 +30,7 @@ type Organization = {
 };
 
 export default function OrganizationsScreen() {
-  const { token, signOut } = useAuth();
+  const { token } = useAuth();
 
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -71,25 +72,16 @@ export default function OrganizationsScreen() {
     }, [loadOrganizations])
   );
 
-  const handleSignOut = async () => {
-    await signOut();
-    router.replace('/login');
-  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView
+      <View style={styles.screen}>
+        <ScrollView
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
       >
         <View>
-          <View style={styles.headerRow}>
-            <Text style={styles.brand}>CIVIA</Text>
-
-            <Pressable onPress={() => router.push('/reports')}>
-              <Text style={styles.reportsLink}>Mis reportes</Text>
-            </Pressable>
-          </View>
+          <Text style={styles.brand}>CIVIA</Text>
 
           <Text style={styles.title}>Mis organizaciones</Text>
 
@@ -282,20 +274,10 @@ export default function OrganizationsScreen() {
             </Pressable>
           </View>
         )}
-        <Pressable
-          onPress={() => {
-            void handleSignOut();
-          }}
-          style={({ pressed }) => [
-            styles.signOutButton,
-            pressed ? styles.buttonPressed : undefined,
-          ]}
-        >
-          <Text style={styles.signOutButtonText}>
-            Cerrar sesión
-          </Text>
-        </Pressable>
-      </ScrollView>
+        </ScrollView>
+
+        <AppBottomNav active="organizations" />
+      </View>
     </SafeAreaView>
   );
 }
@@ -305,27 +287,19 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F7F9FB',
   },
+  screen: {
+    flex: 1,
+  },
   container: {
     flexGrow: 1,
     paddingHorizontal: 28,
     paddingVertical: 32,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 24,
   },
   brand: {
     fontSize: 22,
     fontWeight: '700',
     color: '#17365D',
     letterSpacing: 0.5,
-  },
-  reportsLink: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#2F75B5',
   },
   title: {
     fontSize: 32,
@@ -497,17 +471,6 @@ const styles = StyleSheet.create({
   },
   actionsButton: {
     marginTop: 24,
-  },
-  signOutButton: {
-    alignSelf: 'center',
-    marginTop: 24,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-  },
-  signOutButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#D92D20',
   },
   buttonPressed: {
     opacity: 0.88,
