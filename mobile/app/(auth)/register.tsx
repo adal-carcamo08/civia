@@ -1,6 +1,7 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -11,28 +12,53 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useAuth } from '../../contexts/auth-context';
+import {
+  ApiError,
+  apiRequest,
+} from '../../services/api';
+
+type RegisterResponse = {
+  id: string;
+  fullName: string;
+  email: string;
+  role: 'USER' | 'GLOBAL_ADMIN';
+  active: boolean;
+  createdAt: string;
+};
 
 export default function RegisterScreen() {
+  const { signIn } = useAuth();
+
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
   const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] =
+    useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [fullNameError, setFullNameError] = useState('');
   const [emailError, setEmailError] = useState('');
   const [passwordError, setPasswordError] = useState('');
-  const [confirmPasswordError, setConfirmPasswordError] = useState('');
+  const [confirmPasswordError, setConfirmPasswordError] =
+    useState('');
+  const [registerError, setRegisterError] = useState('');
 
-  const validateForm = () => {
+  const handleRegister = async () => {
+    if (isSubmitting) {
+      return;
+    }
+
     let isValid = true;
 
     setFullNameError('');
     setEmailError('');
     setPasswordError('');
     setConfirmPasswordError('');
+    setRegisterError('');
 
     const normalizedName = fullName.trim();
     const normalizedEmail = email.trim();
@@ -43,6 +69,11 @@ export default function RegisterScreen() {
     } else if (normalizedName.length < 3) {
       setFullNameError('Ingresa un nombre válido.');
       isValid = false;
+    } else if (normalizedName.length > 100) {
+      setFullNameError(
+        'El nombre no puede superar los 100 caracteres.'
+      );
+      isValid = false;
     }
 
     if (!normalizedEmail) {
@@ -51,15 +82,30 @@ export default function RegisterScreen() {
     } else if (!/^\S+@\S+\.\S+$/.test(normalizedEmail)) {
       setEmailError('Ingresa un correo electrónico válido.');
       isValid = false;
+    } else if (normalizedEmail.length > 150) {
+      setEmailError(
+        'El correo no puede superar los 150 caracteres.'
+      );
+      isValid = false;
     }
 
     if (!password) {
       setPasswordError('Ingresa una contraseña.');
       isValid = false;
     } else if (password.length < 8) {
-      setPasswordError('La contraseña debe tener al menos 8 caracteres.');
+      setPasswordError(
+        'La contraseña debe tener al menos 8 caracteres.'
+      );
       isValid = false;
-    } else if (!/[A-Za-z]/.test(password) || !/\d/.test(password)) {
+    } else if (password.length > 72) {
+      setPasswordError(
+        'La contraseña no puede superar los 72 caracteres.'
+      );
+      isValid = false;
+    } else if (
+      !/[A-Za-z]/.test(password) ||
+      !/\d/.test(password)
+    ) {
       setPasswordError(
         'La contraseña debe incluir al menos una letra y un número.'
       );
@@ -70,7 +116,9 @@ export default function RegisterScreen() {
       setConfirmPasswordError('Confirma tu contraseña.');
       isValid = false;
     } else if (confirmPassword !== password) {
-      setConfirmPasswordError('Las contraseñas no coinciden.');
+      setConfirmPasswordError(
+        'Las contraseñas no coinciden.'
+      );
       isValid = false;
     }
 
@@ -78,7 +126,48 @@ export default function RegisterScreen() {
       return;
     }
 
-    // El registro real se conectará posteriormente con el backend.
+    setIsSubmitting(true);
+
+    try {
+      await apiRequest<RegisterResponse>(
+        '/auth/register',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            fullName: normalizedName,
+            email: normalizedEmail,
+            password,
+          }),
+        }
+      );
+    } catch (error) {
+      if (
+        error instanceof ApiError &&
+        error.status === 409
+      ) {
+        setEmailError(
+          'Ya existe una cuenta con este correo.'
+        );
+      } else {
+        setRegisterError(
+          'No se pudo crear la cuenta. Verifica tu conexión e inténtalo nuevamente.'
+        );
+      }
+
+      setIsSubmitting(false);
+      return;
+    }
+
+    try {
+      await signIn(normalizedEmail, password);
+      router.replace('/organizations');
+    } catch {
+      setRegisterError(
+        'La cuenta fue creada, pero no pudimos iniciar sesión automáticamente. Intenta iniciar sesión.'
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -98,13 +187,14 @@ export default function RegisterScreen() {
             <Text style={styles.title}>Crear cuenta</Text>
 
             <Text style={styles.subtitle}>
-              Regístrate para acceder a organizaciones y dar seguimiento a tus
-              reportes.
+              Regístrate para acceder a organizaciones y dar seguimiento a tus reportes.
             </Text>
 
             <View style={styles.form}>
               <View style={styles.field}>
-                <Text style={styles.label}>Nombre completo</Text>
+                <Text style={styles.label}>
+                  Nombre completo
+                </Text>
 
                 <TextInput
                   value={fullName}
@@ -114,6 +204,10 @@ export default function RegisterScreen() {
                     if (fullNameError) {
                       setFullNameError('');
                     }
+
+                    if (registerError) {
+                      setRegisterError('');
+                    }
                   }}
                   placeholder="Nombre y apellido"
                   placeholderTextColor="#98A2B3"
@@ -122,19 +216,27 @@ export default function RegisterScreen() {
                   autoComplete="name"
                   textContentType="name"
                   returnKeyType="next"
+                  maxLength={100}
+                  editable={!isSubmitting}
                   style={[
                     styles.input,
-                    fullNameError ? styles.inputError : undefined,
+                    fullNameError
+                      ? styles.inputError
+                      : undefined,
                   ]}
                 />
 
                 {fullNameError ? (
-                  <Text style={styles.errorText}>{fullNameError}</Text>
+                  <Text style={styles.errorText}>
+                    {fullNameError}
+                  </Text>
                 ) : null}
               </View>
 
               <View style={styles.field}>
-                <Text style={styles.label}>Correo electrónico</Text>
+                <Text style={styles.label}>
+                  Correo electrónico
+                </Text>
 
                 <TextInput
                   value={email}
@@ -143,6 +245,10 @@ export default function RegisterScreen() {
 
                     if (emailError) {
                       setEmailError('');
+                    }
+
+                    if (registerError) {
+                      setRegisterError('');
                     }
                   }}
                   placeholder="nombre@correo.com"
@@ -153,24 +259,34 @@ export default function RegisterScreen() {
                   autoComplete="email"
                   textContentType="emailAddress"
                   returnKeyType="next"
+                  maxLength={150}
+                  editable={!isSubmitting}
                   style={[
                     styles.input,
-                    emailError ? styles.inputError : undefined,
+                    emailError
+                      ? styles.inputError
+                      : undefined,
                   ]}
                 />
 
                 {emailError ? (
-                  <Text style={styles.errorText}>{emailError}</Text>
+                  <Text style={styles.errorText}>
+                    {emailError}
+                  </Text>
                 ) : null}
               </View>
 
               <View style={styles.field}>
-                <Text style={styles.label}>Contraseña</Text>
+                <Text style={styles.label}>
+                  Contraseña
+                </Text>
 
                 <View
                   style={[
                     styles.passwordContainer,
-                    passwordError ? styles.inputError : undefined,
+                    passwordError
+                      ? styles.inputError
+                      : undefined,
                   ]}
                 >
                   <TextInput
@@ -181,6 +297,10 @@ export default function RegisterScreen() {
                       if (passwordError) {
                         setPasswordError('');
                       }
+
+                      if (registerError) {
+                        setRegisterError('');
+                      }
                     }}
                     placeholder="Mínimo 8 caracteres"
                     placeholderTextColor="#98A2B3"
@@ -190,31 +310,46 @@ export default function RegisterScreen() {
                     autoComplete="new-password"
                     textContentType="newPassword"
                     returnKeyType="next"
+                    maxLength={72}
+                    editable={!isSubmitting}
                     style={styles.passwordInput}
                   />
 
                   <Pressable
-                    onPress={() => setShowPassword((current) => !current)}
+                    onPress={() =>
+                      setShowPassword(
+                        (current) => !current
+                      )
+                    }
+                    disabled={isSubmitting}
                     hitSlop={10}
                   >
                     <Text style={styles.passwordToggle}>
-                      {showPassword ? 'Ocultar' : 'Mostrar'}
+                      {showPassword
+                        ? 'Ocultar'
+                        : 'Mostrar'}
                     </Text>
                   </Pressable>
                 </View>
 
                 {passwordError ? (
-                  <Text style={styles.errorText}>{passwordError}</Text>
+                  <Text style={styles.errorText}>
+                    {passwordError}
+                  </Text>
                 ) : null}
               </View>
 
               <View style={styles.field}>
-                <Text style={styles.label}>Confirmar contraseña</Text>
+                <Text style={styles.label}>
+                  Confirmar contraseña
+                </Text>
 
                 <View
                   style={[
                     styles.passwordContainer,
-                    confirmPasswordError ? styles.inputError : undefined,
+                    confirmPasswordError
+                      ? styles.inputError
+                      : undefined,
                   ]}
                 >
                   <TextInput
@@ -225,6 +360,10 @@ export default function RegisterScreen() {
                       if (confirmPasswordError) {
                         setConfirmPasswordError('');
                       }
+
+                      if (registerError) {
+                        setRegisterError('');
+                      }
                     }}
                     placeholder="Repite tu contraseña"
                     placeholderTextColor="#98A2B3"
@@ -234,43 +373,86 @@ export default function RegisterScreen() {
                     autoComplete="new-password"
                     textContentType="newPassword"
                     returnKeyType="done"
-                    onSubmitEditing={validateForm}
+                    maxLength={72}
+                    editable={!isSubmitting}
+                    onSubmitEditing={() => {
+                      void handleRegister();
+                    }}
                     style={styles.passwordInput}
                   />
 
                   <Pressable
                     onPress={() =>
-                      setShowConfirmPassword((current) => !current)
+                      setShowConfirmPassword(
+                        (current) => !current
+                      )
                     }
+                    disabled={isSubmitting}
                     hitSlop={10}
                   >
                     <Text style={styles.passwordToggle}>
-                      {showConfirmPassword ? 'Ocultar' : 'Mostrar'}
+                      {showConfirmPassword
+                        ? 'Ocultar'
+                        : 'Mostrar'}
                     </Text>
                   </Pressable>
                 </View>
 
                 {confirmPasswordError ? (
-                  <Text style={styles.errorText}>{confirmPasswordError}</Text>
+                  <Text style={styles.errorText}>
+                    {confirmPasswordError}
+                  </Text>
                 ) : null}
               </View>
 
+              {registerError ? (
+                <Text style={styles.registerError}>
+                  {registerError}
+                </Text>
+              ) : null}
+
               <Pressable
-                onPress={validateForm}
+                onPress={() => {
+                  void handleRegister();
+                }}
+                disabled={isSubmitting}
                 style={({ pressed }) => [
                   styles.primaryButton,
-                  pressed ? styles.primaryButtonPressed : undefined,
+                  pressed && !isSubmitting
+                    ? styles.primaryButtonPressed
+                    : undefined,
+                  isSubmitting
+                    ? styles.primaryButtonDisabled
+                    : undefined,
                 ]}
               >
-                <Text style={styles.primaryButtonText}>Crear cuenta</Text>
+                {isSubmitting ? (
+                  <ActivityIndicator
+                    size="small"
+                    color="#FFFFFF"
+                  />
+                ) : (
+                  <Text style={styles.primaryButtonText}>
+                    Crear cuenta
+                  </Text>
+                )}
               </Pressable>
             </View>
 
             <View style={styles.loginRow}>
-              <Text style={styles.helperText}>¿Ya tienes una cuenta? </Text>
+              <Text style={styles.helperText}>
+                ¿Ya tienes una cuenta?{' '}
+              </Text>
 
-              <Pressable onPress={() => router.replace('/login')}>
-                <Text style={styles.loginLink}>Iniciar sesión</Text>
+              <Pressable
+                onPress={() =>
+                  router.replace('/login')
+                }
+                disabled={isSubmitting}
+              >
+                <Text style={styles.loginLink}>
+                  Iniciar sesión
+                </Text>
               </Pressable>
             </View>
           </View>
@@ -367,6 +549,12 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     color: '#D92D20',
   },
+  registerError: {
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
+    color: '#D92D20',
+  },
   primaryButton: {
     height: 54,
     alignItems: 'center',
@@ -377,6 +565,9 @@ const styles = StyleSheet.create({
   },
   primaryButtonPressed: {
     opacity: 0.88,
+  },
+  primaryButtonDisabled: {
+    opacity: 0.7,
   },
   primaryButtonText: {
     fontSize: 16,
