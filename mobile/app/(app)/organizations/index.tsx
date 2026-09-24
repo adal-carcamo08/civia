@@ -29,7 +29,7 @@ type Organization = {
 };
 
 export default function OrganizationsScreen() {
-  const { token } = useAuth();
+  const { token, signOut } = useAuth();
 
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -70,6 +70,11 @@ export default function OrganizationsScreen() {
       void loadOrganizations();
     }, [loadOrganizations])
   );
+
+  const handleSignOut = async () => {
+    await signOut();
+    router.replace('/login');
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -277,6 +282,19 @@ export default function OrganizationsScreen() {
             </Pressable>
           </View>
         )}
+        <Pressable
+          onPress={() => {
+            void handleSignOut();
+          }}
+          style={({ pressed }) => [
+            styles.signOutButton,
+            pressed ? styles.buttonPressed : undefined,
+          ]}
+        >
+          <Text style={styles.signOutButtonText}>
+            Cerrar sesión
+          </Text>
+        </Pressable>
       </ScrollView>
     </SafeAreaView>
   );
@@ -479,6 +497,17 @@ const styles = StyleSheet.create({
   },
   actionsButton: {
     marginTop: 24,
+  },
+  signOutButton: {
+    alignSelf: 'center',
+    marginTop: 24,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+  },
+  signOutButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#D92D20',
   },
   buttonPressed: {
     opacity: 0.88,
