@@ -2,6 +2,18 @@ const apiUrl = process.env.EXPO_PUBLIC_API_URL?.replace(/\/+$/, '');
 
 const API_TIMEOUT_MS = 8000;
 
+export function buildApiUrl(path: string) {
+  if (!apiUrl) {
+    throw new Error('La URL de la API no está configurada.');
+  }
+
+  const normalizedPath = path.startsWith('/')
+    ? path
+    : `/${path}`;
+
+  return `${apiUrl}${normalizedPath}`;
+}
+
 export class ApiError extends Error {
   readonly status: number;
   readonly responseBody: string;

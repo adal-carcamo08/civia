@@ -9,6 +9,7 @@ import {
 } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -20,6 +21,7 @@ import { useAuth } from '../../../contexts/auth-context';
 import {
   ApiError,
   apiRequest,
+  buildApiUrl,
 } from '../../../services/api';
 
 type ReportStatus =
@@ -441,13 +443,18 @@ export default function ReportDetailScreen() {
                           <View
                             style={styles.attachmentItem}
                           >
-                            <View style={styles.fileIcon}>
-                              <Text
-                                style={styles.fileIconText}
-                              >
-                                IMG
-                              </Text>
-                            </View>
+                            <Image
+                              source={{
+                                uri: buildApiUrl(
+                                  attachment.url
+                                ),
+                                headers: {
+                                  Authorization: `Bearer ${token}`,
+                                },
+                              }}
+                              style={styles.attachmentImage}
+                              resizeMode="cover"
+                            />
 
                             <View
                               style={styles.attachmentInfo}
@@ -466,6 +473,12 @@ export default function ReportDetailScreen() {
                                 {formatDate(
                                   attachment.createdAt
                                 )}
+                              </Text>
+
+                              <Text
+                                style={styles.protectedText}
+                              >
+                                Evidencia protegida
                               </Text>
                             </View>
                           </View>
@@ -728,18 +741,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 16,
   },
-  fileIcon: {
-    width: 42,
-    height: 42,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 10,
+  attachmentImage: {
+    width: 76,
+    height: 76,
+    borderRadius: 12,
     backgroundColor: '#E8EFF7',
-  },
-  fileIconText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#17365D',
   },
   attachmentInfo: {
     flex: 1,
@@ -754,6 +760,12 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontSize: 11,
     color: '#98A2B3',
+  },
+  protectedText: {
+    marginTop: 5,
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#2F75B5',
   },
   backButton: {
     height: 54,
