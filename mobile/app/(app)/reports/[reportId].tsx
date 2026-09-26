@@ -340,6 +340,30 @@ export default function ReportDetailScreen() {
                     Acciones del reporte
                   </Text>
 
+                  {report.status === 'RECEIVED' ? (
+                    <Pressable
+                      onPress={() => {
+                        router.push({
+                          pathname:
+                            '/reports/[reportId]/edit',
+                          params: {
+                            reportId: report.id,
+                          },
+                        });
+                      }}
+                      style={({ pressed }) => [
+                        styles.editButton,
+                        pressed
+                          ? styles.buttonPressed
+                          : undefined,
+                      ]}
+                    >
+                      <Text style={styles.editButtonText}>
+                        Editar reporte
+                      </Text>
+                    </Pressable>
+                  ) : null}
+
                   <Pressable
                     disabled={isCancelling}
                     onPress={confirmCancelReport}
@@ -823,7 +847,7 @@ const styles = StyleSheet.create({
     marginTop: 20,
     padding: 18,
     borderWidth: 1,
-    borderColor: '#FECACA',
+    borderColor: '#E4E7EC',
     borderRadius: 16,
     backgroundColor: '#FFFFFF',
   },
@@ -832,6 +856,19 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: '#1F2937',
+  },
+  editButton: {
+    height: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+    borderRadius: 12,
+    backgroundColor: '#17365D',
+  },
+  editButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   cancelButton: {
     height: 50,
