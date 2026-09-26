@@ -10,6 +10,7 @@ import {
 import {
   ActivityIndicator,
   Image,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -113,6 +114,10 @@ export default function ReportDetailScreen() {
 
   const [report, setReport] =
     useState<ReportDetail | null>(null);
+  const [previewAttachment, setPreviewAttachment] =
+    useState<ReportDetail['attachments'][number] | null>(
+      null
+    );
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -443,18 +448,32 @@ export default function ReportDetailScreen() {
                           <View
                             style={styles.attachmentItem}
                           >
-                            <Image
-                              source={{
-                                uri: buildApiUrl(
-                                  attachment.url
-                                ),
-                                headers: {
-                                  Authorization: `Bearer ${token}`,
-                                },
-                              }}
-                              style={styles.attachmentImage}
-                              resizeMode="cover"
-                            />
+                            <Pressable
+                              onPress={() =>
+                                setPreviewAttachment(
+                                  attachment
+                                )
+                              }
+                              style={({ pressed }) => [
+                                styles.attachmentImageButton,
+                                pressed
+                                  ? styles.buttonPressed
+                                  : undefined,
+                              ]}
+                            >
+                              <Image
+                                source={{
+                                  uri: buildApiUrl(
+                                    attachment.url
+                                  ),
+                                  headers: {
+                                    Authorization: `Bearer ${token}`,
+                                  },
+                                }}
+                                style={styles.attachmentImage}
+                                resizeMode="cover"
+                              />
+                            </Pressable>
 
                             <View
                               style={styles.attachmentInfo}
@@ -515,6 +534,61 @@ export default function ReportDetailScreen() {
           ) : null}
         </View>
       </ScrollView>
+
+      <Modal
+        visible={previewAttachment !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() =>
+          setPreviewAttachment(null)
+        }
+      >
+        <View style={styles.previewOverlay}>
+          <View style={styles.previewHeader}>
+            <Text
+              style={styles.previewFileName}
+              numberOfLines={1}
+            >
+              {previewAttachment?.fileName ??
+                'Evidencia'}
+            </Text>
+
+            <Pressable
+              onPress={() =>
+                setPreviewAttachment(null)
+              }
+              hitSlop={12}
+              style={({ pressed }) => [
+                styles.previewCloseButton,
+                pressed
+                  ? styles.previewClosePressed
+                  : undefined,
+              ]}
+            >
+              <Text style={styles.previewCloseText}>
+                Cerrar
+              </Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.previewContent}>
+            {previewAttachment ? (
+              <Image
+                source={{
+                  uri: buildApiUrl(
+                    previewAttachment.url
+                  ),
+                  headers: {
+                    Authorization: `Bearer ${token}`,
+                  },
+                }}
+                style={styles.previewImage}
+                resizeMode="contain"
+              />
+            ) : null}
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -741,10 +815,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 16,
   },
-  attachmentImage: {
+  attachmentImageButton: {
     width: 76,
     height: 76,
     borderRadius: 12,
+    overflow: 'hidden',
+  },
+  attachmentImage: {
+    width: '100%',
+    height: '100%',
     backgroundColor: '#E8EFF7',
   },
   attachmentInfo: {
@@ -781,6 +860,48 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#17365D',
+  },
+  previewOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.96)',
+  },
+  previewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 16,
+    paddingHorizontal: 20,
+    paddingTop: 56,
+    paddingBottom: 16,
+  },
+  previewFileName: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  previewCloseButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  previewClosePressed: {
+    opacity: 0.65,
+  },
+  previewCloseText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  previewContent: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingBottom: 40,
+  },
+  previewImage: {
+    width: '100%',
+    height: '100%',
   },
   buttonPressed: {
     opacity: 0.88,

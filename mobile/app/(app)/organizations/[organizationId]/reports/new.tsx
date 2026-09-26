@@ -68,7 +68,7 @@ export default function NewReportScreen() {
     useState('');
   const [categoryModalVisible, setCategoryModalVisible] =
     useState(false);
-  const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const [photoUris, setPhotoUris] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [otherProblemType, setOtherProblemType] = useState('');
@@ -118,6 +118,13 @@ export default function NewReportScreen() {
   const selectPhoto = async () => {
     setPhotoError('');
 
+    if (photoUris.length >= 5) {
+      setPhotoError(
+        'Puedes adjuntar un máximo de 5 fotografías.'
+      );
+      return;
+    }
+
     if (Platform.OS !== 'web') {
       const permission =
         await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -139,7 +146,13 @@ export default function NewReportScreen() {
     if (!result.canceled && result.assets.length > 0) {
       const asset = result.assets[0];
 
-      setPhotoUri(asset.uri);
+      setPhotoUris((current) => {
+        if (current.length >= 5) {
+          return current;
+        }
+
+        return [...current, asset.uri];
+      });
     }
   };
 
@@ -231,47 +244,57 @@ ${normalizedDescription}`
         }
       );
 
-      if (photoUri) {
-        try {
-          const file = new File(photoUri);
-          const formData = new FormData();
+      if (photoUris.length > 0) {
+        let failedUploads = 0;
+        let lastUploadError = '';
 
-          formData.append('file', file);
+        for (const photoUri of photoUris) {
+          try {
+            const file = new File(photoUri);
+            const formData = new FormData();
 
-          const uploadResponse = await expoFetch(
-            buildApiUrl(
-              `/reports/${createdReport.id}/attachments`
-            ),
-            {
-              method: 'POST',
-              headers: {
-                Authorization: `Bearer ${token}`,
-              },
-              body: formData,
-            }
-          );
+            formData.append('file', file);
 
-          if (!uploadResponse.ok) {
-            const responseBody =
-              await uploadResponse.text();
-
-            throw new Error(
-              `Servidor (${uploadResponse.status}): ${
-                responseBody ||
-                'No fue posible adjuntar la fotografía.'
-              }`
+            const uploadResponse = await expoFetch(
+              buildApiUrl(
+                `/reports/${createdReport.id}/attachments`
+              ),
+              {
+                method: 'POST',
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                },
+                body: formData,
+              }
             );
+
+            if (!uploadResponse.ok) {
+              const responseBody =
+                await uploadResponse.text();
+
+              throw new Error(
+                `Servidor (${uploadResponse.status}): ${
+                  responseBody ||
+                  'No fue posible adjuntar la fotografía.'
+                }`
+              );
+            }
+          } catch (uploadError) {
+            failedUploads += 1;
+
+            lastUploadError =
+              uploadError instanceof Error
+                ? uploadError.message
+                : 'Error desconocido durante la subida.';
           }
-        } catch (uploadError) {
+        }
+
+        if (failedUploads > 0) {
           Alert.alert(
             'Reporte creado',
-            `El reporte fue enviado correctamente, pero no pudimos adjuntar la fotografía.
+            `El reporte fue enviado correctamente, pero ${failedUploads} de ${photoUris.length} fotografías no pudieron adjuntarse.
 
-${
-  uploadError instanceof Error
-    ? uploadError.message
-    : 'Error desconocido durante la subida.'
-}`
+${lastUploadError}`
           );
         }
       }
@@ -317,63 +340,102 @@ ${
 
             <View style={styles.form}>
               <View style={styles.field}>
-                <Text style={styles.label}>Fotografía</Text>
+                <Text style={styles.label}>
+                  Fotografías
+                </Text>
 
-                {photoUri ? (
-                  <View style={styles.photoContainer}>
-                    <Image
-                      source={{ uri: photoUri }}
-                      style={styles.photoPreview}
-                    />
-
-                    <View style={styles.photoActions}>
-                      <Pressable
-                        onPress={selectPhoto}
-                        style={({ pressed }) => [
-                          styles.photoButton,
-                          pressed ? styles.buttonPressed : undefined,
-                        ]}
-                      >
-                        <Text style={styles.photoButtonText}>Cambiar</Text>
-                      </Pressable>
-
-                      <Pressable
-                        onPress={() => {
-                          setPhotoUri(null);
-                          setPhotoError('');
-                        }}
-                        style={({ pressed }) => [
-                          styles.removePhotoButton,
-                          pressed ? styles.buttonPressed : undefined,
-                        ]}
-                      >
-                        <Text style={styles.removePhotoText}>Quitar</Text>
-                      </Pressable>
-                    </View>
-                  </View>
-                ) : (
+                {photoUris.length === 0 ? (
                   <Pressable
                     onPress={selectPhoto}
                     style={({ pressed }) => [
                       styles.photoSelector,
-                      pressed ? styles.buttonPressed : undefined,
+                      pressed
+                        ? styles.buttonPressed
+                        : undefined,
                     ]}
                   >
                     <Text style={styles.photoSelectorTitle}>
                       Agregar fotografía
                     </Text>
+
                     <Text style={styles.photoSelectorText}>
-                      Selecciona una imagen de tu dispositivo
+                      Puedes adjuntar hasta 5 imágenes
                     </Text>
                   </Pressable>
+                ) : (
+                  <View style={styles.photoGrid}>
+                    {photoUris.map((photoUri, index) => (
+                      <View
+                        key={`${photoUri}-${index}`}
+                        style={styles.photoCard}
+                      >
+                        <Image
+                          source={{ uri: photoUri }}
+                          style={styles.photoCardImage}
+                        />
+
+                        <Pressable
+                          onPress={() => {
+                            setPhotoUris((current) =>
+                              current.filter(
+                                (_, photoIndex) =>
+                                  photoIndex !== index
+                              )
+                            );
+                            setPhotoError('');
+                          }}
+                          style={({ pressed }) => [
+                            styles.photoRemoveButton,
+                            pressed
+                              ? styles.buttonPressed
+                              : undefined,
+                          ]}
+                        >
+                          <Text
+                            style={styles.photoRemoveText}
+                          >
+                            Quitar
+                          </Text>
+                        </Pressable>
+                      </View>
+                    ))}
+
+                    {photoUris.length < 5 ? (
+                      <Pressable
+                        onPress={selectPhoto}
+                        style={({ pressed }) => [
+                          styles.photoAddCard,
+                          pressed
+                            ? styles.buttonPressed
+                            : undefined,
+                        ]}
+                      >
+                        <Text
+                          style={styles.photoAddSymbol}
+                        >
+                          +
+                        </Text>
+
+                        <Text style={styles.photoAddText}>
+                          Agregar otra
+                        </Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
                 )}
 
+                <Text style={styles.photoCounter}>
+                  {photoUris.length} de 5 fotografías
+                </Text>
+
                 <Text style={styles.helperText}>
-                  La fotografía es opcional.
+                  Las fotografías son opcionales.
                 </Text>
 
                 {photoError ? (
-                  <Text style={styles.errorText}>{photoError}</Text>
+                  <Text style={styles.errorText}>
+                    {photoError}
+                  </Text>
                 ) : null}
               </View>
 
@@ -809,6 +871,66 @@ const styles = StyleSheet.create({
     color: '#344054',
   },
 
+  photoGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  photoCard: {
+    width: '48%',
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#E4E7EC',
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+  },
+  photoCardImage: {
+    width: '100%',
+    height: 130,
+    backgroundColor: '#E8EFF7',
+  },
+  photoRemoveButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 38,
+    borderTopWidth: 1,
+    borderTopColor: '#EAECF0',
+  },
+  photoRemoveText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#D92D20',
+  },
+  photoAddCard: {
+    width: '48%',
+    minHeight: 169,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: '#98A2B3',
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+  },
+  photoAddSymbol: {
+    fontSize: 30,
+    lineHeight: 34,
+    fontWeight: '400',
+    color: '#17365D',
+  },
+  photoAddText: {
+    marginTop: 6,
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'center',
+    color: '#17365D',
+  },
+  photoCounter: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#667085',
+  },
   categoryField: {
     height: 54,
     flexDirection: 'row',
