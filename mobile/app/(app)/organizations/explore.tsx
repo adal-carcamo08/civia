@@ -9,6 +9,7 @@ import {
 } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -18,7 +19,10 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../../contexts/auth-context';
-import { apiRequest } from '../../../services/api';
+import {
+  ApiError,
+  apiRequest,
+} from '../../../services/api';
 
 type PublicOrganization = {
   id: string;
@@ -39,6 +43,8 @@ export default function ExploreOrganizationsScreen() {
     useState<PublicOrganization[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  const [joiningOrganizationId, setJoiningOrganizationId] =
+    useState<string | null>(null);
 
   const loadOrganizations = useCallback(async () => {
     if (!token) {
@@ -78,14 +84,17 @@ export default function ExploreOrganizationsScreen() {
   );
 
   const filteredOrganizations = useMemo(() => {
-    const normalizedSearch = search.trim().toLowerCase();
+    const normalizedSearch =
+      search.trim().toLowerCase();
 
     if (!normalizedSearch) {
       return organizations;
     }
 
     return organizations.filter((organization) => {
-      const name = organization.name.toLowerCase();
+      const name =
+        organization.name.toLowerCase();
+
       const description =
         organization.description?.toLowerCase() ?? '';
 
@@ -96,14 +105,109 @@ export default function ExploreOrganizationsScreen() {
     });
   }, [organizations, search]);
 
+  const performJoin = async (
+    organization: PublicOrganization
+  ) => {
+    if (
+      !token ||
+      joiningOrganizationId
+    ) {
+      return;
+    }
+
+    setJoiningOrganizationId(
+      organization.id
+    );
+
+    try {
+      await apiRequest(
+        `/organizations/${organization.id}/join`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      await loadOrganizations();
+
+      Alert.alert(
+        'Organización agregada',
+        `Ahora formas parte de ${organization.name}.`,
+        [
+          {
+            text: 'Entrar',
+            onPress: () => {
+              router.replace({
+                pathname:
+                  '/organizations/[organizationId]',
+                params: {
+                  organizationId:
+                    organization.id,
+                },
+              });
+            },
+          },
+          {
+            text: 'Cerrar',
+            style: 'cancel',
+          },
+        ]
+      );
+    } catch (error) {
+      Alert.alert(
+        'No pudimos unirte',
+        error instanceof ApiError
+          ? error.message
+          : 'Verifica tu conexión e inténtalo nuevamente.'
+      );
+    } finally {
+      setJoiningOrganizationId(null);
+    }
+  };
+
+  const confirmJoin = (
+    organization: PublicOrganization
+  ) => {
+    if (joiningOrganizationId) {
+      return;
+    }
+
+    Alert.alert(
+      'Unirte a esta organización',
+      `¿Deseas unirte a ${organization.name}?`,
+      [
+        {
+          text: 'Cancelar',
+          style: 'cancel',
+        },
+        {
+          text: 'Unirme',
+          onPress: () => {
+            void performJoin(
+              organization
+            );
+          },
+        },
+      ]
+    );
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView
-        contentContainerStyle={styles.container}
+        contentContainerStyle={
+          styles.container
+        }
         keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+        showsVerticalScrollIndicator={
+          false
+        }
       >
-        <Text style={styles.brand}>CIVIA</Text>
+        <Text style={styles.brand}>
+          CIVIA
+        </Text>
 
         <Text style={styles.title}>
           Explorar organizaciones
@@ -131,7 +235,9 @@ export default function ExploreOrganizationsScreen() {
               color="#17365D"
             />
 
-            <Text style={styles.loadingText}>
+            <Text
+              style={styles.loadingText}
+            >
               Cargando organizaciones...
             </Text>
           </View>
@@ -151,15 +257,22 @@ export default function ExploreOrganizationsScreen() {
               }}
               style={({ pressed }) => [
                 styles.primaryButton,
-                pressed ? styles.buttonPressed : undefined,
+                pressed
+                  ? styles.buttonPressed
+                  : undefined,
               ]}
             >
-              <Text style={styles.primaryButtonText}>
+              <Text
+                style={
+                  styles.primaryButtonText
+                }
+              >
                 Intentar nuevamente
               </Text>
             </Pressable>
           </View>
-        ) : filteredOrganizations.length === 0 ? (
+        ) : filteredOrganizations.length ===
+          0 ? (
           <View style={styles.centerState}>
             <Text style={styles.emptyTitle}>
               No encontramos organizaciones
@@ -170,85 +283,181 @@ export default function ExploreOrganizationsScreen() {
             </Text>
           </View>
         ) : (
-          <View style={styles.resultsSection}>
-            <Text style={styles.resultCount}>
-              {filteredOrganizations.length === 1
+          <View
+            style={
+              styles.resultsSection
+            }
+          >
+            <Text
+              style={styles.resultCount}
+            >
+              {filteredOrganizations.length ===
+              1
                 ? '1 organización pública'
                 : `${filteredOrganizations.length} organizaciones públicas`}
             </Text>
 
-            <View style={styles.organizationList}>
-              {filteredOrganizations.map((organization) => (
-                <View
-                  key={organization.id}
-                  style={styles.organizationCard}
-                >
-                  <View style={styles.organizationIcon}>
-                    <Text style={styles.organizationIconText}>
-                      {organization.name
-                        .trim()
-                        .charAt(0)
-                        .toUpperCase()}
-                    </Text>
-                  </View>
+            <View
+              style={
+                styles.organizationList
+              }
+            >
+              {filteredOrganizations.map(
+                (organization) => {
+                  const isJoining =
+                    joiningOrganizationId ===
+                    organization.id;
 
-                  <View style={styles.organizationContent}>
-                    <View style={styles.organizationHeader}>
-                      <Text
-                        style={styles.organizationName}
-                        numberOfLines={2}
+                  return (
+                    <View
+                      key={
+                        organization.id
+                      }
+                      style={
+                        styles.organizationCard
+                      }
+                    >
+                      <View
+                        style={
+                          styles.organizationIcon
+                        }
                       >
-                        {organization.name}
-                      </Text>
-
-                      <View style={styles.publicBadge}>
-                        <Text style={styles.publicBadgeText}>
-                          Pública
+                        <Text
+                          style={
+                            styles.organizationIconText
+                          }
+                        >
+                          {organization.name
+                            .trim()
+                            .charAt(0)
+                            .toUpperCase()}
                         </Text>
+                      </View>
+
+                      <View
+                        style={
+                          styles.organizationContent
+                        }
+                      >
+                        <View
+                          style={
+                            styles.organizationHeader
+                          }
+                        >
+                          <Text
+                            style={
+                              styles.organizationName
+                            }
+                            numberOfLines={2}
+                          >
+                            {
+                              organization.name
+                            }
+                          </Text>
+
+                          <View
+                            style={
+                              styles.publicBadge
+                            }
+                          >
+                            <Text
+                              style={
+                                styles.publicBadgeText
+                              }
+                            >
+                              Pública
+                            </Text>
+                          </View>
+                        </View>
+
+                        {organization.description ? (
+                          <Text
+                            style={
+                              styles.organizationDescription
+                            }
+                            numberOfLines={
+                              3
+                            }
+                          >
+                            {
+                              organization.description
+                            }
+                          </Text>
+                        ) : null}
+
+                        {organization.isMember ? (
+                          <Pressable
+                            onPress={() =>
+                              router.push({
+                                pathname:
+                                  '/organizations/[organizationId]',
+                                params: {
+                                  organizationId:
+                                    organization.id,
+                                },
+                              })
+                            }
+                            style={({
+                              pressed,
+                            }) => [
+                              styles.memberButton,
+                              pressed
+                                ? styles.buttonPressed
+                                : undefined,
+                            ]}
+                          >
+                            <Text
+                              style={
+                                styles.memberButtonText
+                              }
+                            >
+                              Ver organización
+                            </Text>
+                          </Pressable>
+                        ) : (
+                          <Pressable
+                            onPress={() =>
+                              confirmJoin(
+                                organization
+                              )
+                            }
+                            disabled={
+                              isJoining
+                            }
+                            style={({
+                              pressed,
+                            }) => [
+                              styles.joinButton,
+                              pressed &&
+                              !isJoining
+                                ? styles.buttonPressed
+                                : undefined,
+                              isJoining
+                                ? styles.disabledButton
+                                : undefined,
+                            ]}
+                          >
+                            {isJoining ? (
+                              <ActivityIndicator
+                                size="small"
+                                color="#FFFFFF"
+                              />
+                            ) : (
+                              <Text
+                                style={
+                                  styles.joinButtonText
+                                }
+                              >
+                                Unirme
+                              </Text>
+                            )}
+                          </Pressable>
+                        )}
                       </View>
                     </View>
-
-                    {organization.description ? (
-                      <Text
-                        style={styles.organizationDescription}
-                        numberOfLines={3}
-                      >
-                        {organization.description}
-                      </Text>
-                    ) : null}
-
-                    {organization.isMember ? (
-                      <Pressable
-                        onPress={() =>
-                          router.push({
-                            pathname:
-                              '/organizations/[organizationId]',
-                            params: {
-                              organizationId: organization.id,
-                            },
-                          })
-                        }
-                        style={({ pressed }) => [
-                          styles.memberButton,
-                          pressed
-                            ? styles.buttonPressed
-                            : undefined,
-                        ]}
-                      >
-                        <Text style={styles.memberButtonText}>
-                          Ver organización
-                        </Text>
-                      </Pressable>
-                    ) : (
-                      <View style={styles.availableBox}>
-                        <Text style={styles.availableText}>
-                          Disponible para unirte
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                </View>
-              ))}
+                  );
+                }
+              )}
             </View>
           </View>
         )}
@@ -257,10 +466,16 @@ export default function ExploreOrganizationsScreen() {
           onPress={() => router.back()}
           style={({ pressed }) => [
             styles.secondaryButton,
-            pressed ? styles.buttonPressed : undefined,
+            pressed
+              ? styles.buttonPressed
+              : undefined,
           ]}
         >
-          <Text style={styles.secondaryButtonText}>
+          <Text
+            style={
+              styles.secondaryButtonText
+            }
+          >
             Volver
           </Text>
         </Pressable>
@@ -284,7 +499,6 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '700',
     color: '#17365D',
-    letterSpacing: 0.5,
   },
   title: {
     fontSize: 32,
@@ -412,18 +626,21 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF',
   },
-  availableBox: {
+  joinButton: {
+    height: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginTop: 14,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
     borderRadius: 10,
-    backgroundColor: '#F2F4F7',
+    backgroundColor: '#2F75B5',
   },
-  availableText: {
-    fontSize: 13,
-    fontWeight: '600',
-    textAlign: 'center',
-    color: '#667085',
+  joinButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  disabledButton: {
+    opacity: 0.6,
   },
   primaryButton: {
     width: '100%',

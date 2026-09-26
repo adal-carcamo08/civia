@@ -1,6 +1,8 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
 import {
+  ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -10,18 +12,83 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useAuth } from '../../../contexts/auth-context';
+import {
+  ApiError,
+  apiRequest,
+} from '../../../services/api';
 
 export default function InvitationScreen() {
-  const [code, setCode] = useState('');
-  const [codeError, setCodeError] = useState('');
+  const { token } = useAuth();
 
-  const validateInvitation = () => {
-    const normalizedCode = code.trim();
+  const [code, setCode] = useState('');
+  const [codeError, setCodeError] =
+    useState('');
+  const [isSubmitting, setIsSubmitting] =
+    useState(false);
+
+  const validateInvitation = async () => {
+    if (isSubmitting) {
+      return;
+    }
+
+    const normalizedCode =
+      code.trim();
 
     setCodeError('');
 
     if (!normalizedCode) {
-      setCodeError('Ingresa tu código de invitación.');
+      setCodeError(
+        'Ingresa tu código de invitación.'
+      );
+      return;
+    }
+
+    if (!token) {
+      setCodeError(
+        'Tu sesión no está disponible. Inicia sesión nuevamente.'
+      );
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      await apiRequest(
+        '/invitations/accept',
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            token: normalizedCode,
+          }),
+        }
+      );
+
+      Alert.alert(
+        'Invitación aceptada',
+        'Ya tienes acceso a la organización.',
+        [
+          {
+            text: 'Ver mis organizaciones',
+            onPress: () => {
+              router.replace(
+                '/organizations'
+              );
+            },
+          },
+        ]
+      );
+    } catch (error) {
+      setCodeError(
+        error instanceof ApiError
+          ? error.message
+          : 'No pudimos validar la invitación. Verifica tu conexión e inténtalo nuevamente.'
+      );
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -29,21 +96,30 @@ export default function InvitationScreen() {
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
         style={styles.keyboardView}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={
+          Platform.OS === 'ios'
+            ? 'padding'
+            : undefined
+        }
       >
         <View style={styles.container}>
-          <Text style={styles.brand}>CIVIA</Text>
+          <Text style={styles.brand}>
+            CIVIA
+          </Text>
 
-          <Text style={styles.title}>Acceder con invitación</Text>
+          <Text style={styles.title}>
+            Acceder con invitación
+          </Text>
 
           <Text style={styles.subtitle}>
-            Ingresa el código que recibiste para solicitar acceso a una
-            organización privada.
+            Ingresa el código que recibiste para acceder a una organización privada.
           </Text>
 
           <View style={styles.form}>
             <View style={styles.field}>
-              <Text style={styles.label}>Código de invitación</Text>
+              <Text style={styles.label}>
+                Código de invitación
+              </Text>
 
               <TextInput
                 value={code}
@@ -59,38 +135,81 @@ export default function InvitationScreen() {
                 autoCapitalize="characters"
                 autoCorrect={false}
                 returnKeyType="done"
-                onSubmitEditing={validateInvitation}
+                editable={!isSubmitting}
+                onSubmitEditing={() => {
+                  void validateInvitation();
+                }}
                 style={[
                   styles.input,
-                  codeError ? styles.inputError : undefined,
+                  codeError
+                    ? styles.inputError
+                    : undefined,
                 ]}
               />
 
               {codeError ? (
-                <Text style={styles.errorText}>{codeError}</Text>
+                <Text
+                  style={
+                    styles.errorText
+                  }
+                >
+                  {codeError}
+                </Text>
               ) : null}
             </View>
 
             <Pressable
-              onPress={validateInvitation}
+              onPress={() => {
+                void validateInvitation();
+              }}
+              disabled={isSubmitting}
               style={({ pressed }) => [
                 styles.primaryButton,
-                pressed ? styles.buttonPressed : undefined,
+                pressed &&
+                !isSubmitting
+                  ? styles.buttonPressed
+                  : undefined,
+                isSubmitting
+                  ? styles.disabledButton
+                  : undefined,
               ]}
             >
-              <Text style={styles.primaryButtonText}>
-                Validar invitación
-              </Text>
+              {isSubmitting ? (
+                <ActivityIndicator
+                  size="small"
+                  color="#FFFFFF"
+                />
+              ) : (
+                <Text
+                  style={
+                    styles.primaryButtonText
+                  }
+                >
+                  Validar invitación
+                </Text>
+              )}
             </Pressable>
 
             <Pressable
-              onPress={() => router.back()}
+              onPress={() =>
+                router.back()
+              }
+              disabled={isSubmitting}
               style={({ pressed }) => [
                 styles.secondaryButton,
-                pressed ? styles.buttonPressed : undefined,
+                pressed &&
+                !isSubmitting
+                  ? styles.buttonPressed
+                  : undefined,
               ]}
             >
-              <Text style={styles.secondaryButtonText}>Volver</Text>
+              <Text
+                style={
+                  styles.secondaryButtonText
+                }
+              >
+                Volver
+              </Text>
             </Pressable>
           </View>
         </View>
@@ -118,7 +237,6 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '700',
     color: '#17365D',
-    letterSpacing: 0.5,
   },
   title: {
     fontSize: 32,
@@ -172,6 +290,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+  disabledButton: {
+    opacity: 0.6,
   },
   secondaryButton: {
     height: 54,
