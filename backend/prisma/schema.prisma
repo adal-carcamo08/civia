@@ -45,6 +45,7 @@ enum ReportStatus {
   RESOLVED
   NOT_APPLICABLE
   REJECTED
+  CANCELLED
 }
 
 model User {

@@ -2,8 +2,10 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Param,
+  Patch,
   Post,
   Req,
   StreamableFile,
@@ -16,6 +18,7 @@ import type { Request } from 'express';
 import { memoryStorage } from 'multer';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CreateReportDto } from './dto/create-report.dto';
+import { UpdateReportDto } from './dto/update-report.dto';
 import { ReportsService } from './reports.service';
 
 type AuthenticatedRequest = Request & {
@@ -40,6 +43,30 @@ export class ReportsController {
   @Get('mine')
   findMine(@Req() request: AuthenticatedRequest) {
     return this.reportsService.findMine(request.user.id);
+  }
+
+  @Patch(':id')
+  update(
+    @Param('id') reportId: string,
+    @Req() request: AuthenticatedRequest,
+    @Body() dto: UpdateReportDto,
+  ) {
+    return this.reportsService.update(
+      reportId,
+      request.user.id,
+      dto,
+    );
+  }
+
+  @Post(':id/cancel')
+  cancel(
+    @Param('id') reportId: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.reportsService.cancel(
+      reportId,
+      request.user.id,
+    );
   }
 
   @Post(':id/attachments')
@@ -95,6 +122,19 @@ export class ReportsController {
   ) {
     return this.reportsService.findOneMine(
       reportId,
+      request.user.id,
+    );
+  }
+
+  @Delete(':reportId/attachments/:attachmentId')
+  removeAttachment(
+    @Param('reportId') reportId: string,
+    @Param('attachmentId') attachmentId: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.reportsService.removeAttachment(
+      reportId,
+      attachmentId,
       request.user.id,
     );
   }

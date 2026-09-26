@@ -28,10 +28,12 @@ describe('ReportsService', () => {
   const membershipFindFirstMock = jest.fn();
   const categoryFindFirstMock = jest.fn();
   const reportCreateMock = jest.fn();
+  const reportUpdateMock = jest.fn();
   const reportFindManyMock = jest.fn();
   const reportFindFirstMock = jest.fn();
   const reportAttachmentFindFirstMock = jest.fn();
   const reportAttachmentCreateMock = jest.fn();
+  const reportAttachmentDeleteMock = jest.fn();
   const historyCreateMock = jest.fn();
   const transactionMock = jest.fn();
 
@@ -48,6 +50,7 @@ describe('ReportsService', () => {
     const tx = {
       report: {
         create: reportCreateMock,
+        update: reportUpdateMock,
       },
       reportStatusHistory: {
         create: historyCreateMock,
@@ -74,6 +77,7 @@ describe('ReportsService', () => {
       reportAttachment: {
         findFirst: reportAttachmentFindFirstMock,
         create: reportAttachmentCreateMock,
+        delete: reportAttachmentDeleteMock,
       },
       $transaction: transactionMock,
     };
@@ -259,6 +263,445 @@ describe('ReportsService', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
 
     expect(transactionMock).not.toHaveBeenCalled();
+  });
+
+  describe('update', () => {
+    it('edita un reporte recibido, actualiza categoría y departamento y registra la edición', async () => {
+      const updatedAt = new Date(
+        '2026-09-26T15:00:00.000Z'
+      );
+
+      reportFindFirstMock.mockResolvedValue({
+        id: 'report-1',
+        status: 'RECEIVED',
+        organizationId: 'organization-1',
+      });
+
+      categoryFindFirstMock.mockResolvedValue({
+        id: 'category-2',
+        departmentId: 'department-2',
+      });
+
+      reportUpdateMock.mockResolvedValue({
+        id: 'report-1',
+        code: 'CIVIA-REPORT-1',
+        status: 'RECEIVED',
+        description: 'Descripción actualizada del reporte.',
+        location: 'Nueva ubicación',
+        updatedAt,
+        category: {
+          id: 'category-2',
+          name: 'Alumbrado público',
+        },
+        department: {
+          id: 'department-2',
+          name: 'Mantenimiento',
+        },
+      });
+
+      historyCreateMock.mockResolvedValue({
+        id: 'history-update-1',
+      });
+
+      const result = await service.update(
+        'report-1',
+        'user-1',
+        {
+          categoryId: 'category-2',
+          description:
+            '  Descripción actualizada del reporte.  ',
+          location: '  Nueva ubicación  ',
+        }
+      );
+
+      expect(reportFindFirstMock).toHaveBeenCalledWith({
+        where: {
+          id: 'report-1',
+          reporterId: 'user-1',
+        },
+        select: {
+          id: true,
+          status: true,
+          organizationId: true,
+        },
+      });
+
+      expect(categoryFindFirstMock).toHaveBeenCalledWith({
+        where: {
+          id: 'category-2',
+          organizationId: 'organization-1',
+          active: true,
+        },
+        select: {
+          id: true,
+          departmentId: true,
+        },
+      });
+
+      expect(reportUpdateMock).toHaveBeenCalledWith({
+        where: {
+          id: 'report-1',
+        },
+        data: {
+          categoryId: 'category-2',
+          departmentId: 'department-2',
+          description:
+            'Descripción actualizada del reporte.',
+          location: 'Nueva ubicación',
+        },
+        select: {
+          id: true,
+          code: true,
+          status: true,
+          description: true,
+          location: true,
+          updatedAt: true,
+          category: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+          department: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+      });
+
+      expect(historyCreateMock).toHaveBeenCalledWith({
+        data: {
+          reportId: 'report-1',
+          fromStatus: 'RECEIVED',
+          toStatus: 'RECEIVED',
+          changedByUserId: 'user-1',
+          note: 'Reporte editado por el usuario.',
+        },
+      });
+
+      expect(result.description).toBe(
+        'Descripción actualizada del reporte.'
+      );
+    });
+
+    it('permite una edición parcial sin modificar campos no enviados', async () => {
+      reportFindFirstMock.mockResolvedValue({
+        id: 'report-1',
+        status: 'RECEIVED',
+        organizationId: 'organization-1',
+      });
+
+      reportUpdateMock.mockResolvedValue({
+        id: 'report-1',
+        code: 'CIVIA-REPORT-1',
+        status: 'RECEIVED',
+        description:
+          'Nueva descripción suficientemente extensa.',
+        location: 'Ubicación original',
+        updatedAt: new Date(
+          '2026-09-26T15:05:00.000Z'
+        ),
+        category: {
+          id: 'category-1',
+          name: 'Fuga de agua',
+        },
+        department: {
+          id: 'department-1',
+          name: 'Mantenimiento',
+        },
+      });
+
+      historyCreateMock.mockResolvedValue({
+        id: 'history-update-2',
+      });
+
+      await service.update(
+        'report-1',
+        'user-1',
+        {
+          description:
+            '  Nueva descripción suficientemente extensa.  ',
+        }
+      );
+
+      expect(categoryFindFirstMock).not.toHaveBeenCalled();
+
+      expect(reportUpdateMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: {
+            description:
+              'Nueva descripción suficientemente extensa.',
+          },
+        })
+      );
+    });
+
+    it('rechaza una edición sin campos para actualizar', async () => {
+      await expect(
+        service.update(
+          'report-1',
+          'user-1',
+          {}
+        )
+      ).rejects.toBeInstanceOf(
+        BadRequestException
+      );
+
+      expect(reportFindFirstMock).not.toHaveBeenCalled();
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    it('rechaza editar un reporte inexistente o de otro usuario', async () => {
+      reportFindFirstMock.mockResolvedValue(null);
+
+      await expect(
+        service.update(
+          'report-1',
+          'user-2',
+          {
+            description:
+              'Descripción suficientemente extensa.',
+          }
+        )
+      ).rejects.toBeInstanceOf(
+        NotFoundException
+      );
+
+      expect(transactionMock).not.toHaveBeenCalled();
+      expect(reportUpdateMock).not.toHaveBeenCalled();
+    });
+
+    it('rechaza editar un reporte que ya no está recibido', async () => {
+      reportFindFirstMock.mockResolvedValue({
+        id: 'report-1',
+        status: 'UNDER_REVIEW',
+        organizationId: 'organization-1',
+      });
+
+      await expect(
+        service.update(
+          'report-1',
+          'user-1',
+          {
+            location: 'Nueva ubicación',
+          }
+        )
+      ).rejects.toBeInstanceOf(
+        BadRequestException
+      );
+
+      expect(categoryFindFirstMock).not.toHaveBeenCalled();
+      expect(transactionMock).not.toHaveBeenCalled();
+      expect(reportUpdateMock).not.toHaveBeenCalled();
+    });
+
+    it('rechaza cambiar a una categoría inexistente o de otra organización', async () => {
+      reportFindFirstMock.mockResolvedValue({
+        id: 'report-1',
+        status: 'RECEIVED',
+        organizationId: 'organization-1',
+      });
+
+      categoryFindFirstMock.mockResolvedValue(null);
+
+      await expect(
+        service.update(
+          'report-1',
+          'user-1',
+          {
+            categoryId: 'category-invalid',
+          }
+        )
+      ).rejects.toBeInstanceOf(
+        NotFoundException
+      );
+
+      expect(categoryFindFirstMock).toHaveBeenCalledWith({
+        where: {
+          id: 'category-invalid',
+          organizationId: 'organization-1',
+          active: true,
+        },
+        select: {
+          id: true,
+          departmentId: true,
+        },
+      });
+
+      expect(transactionMock).not.toHaveBeenCalled();
+      expect(reportUpdateMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('cancel', () => {
+    it('cancela un reporte recibido y registra el cambio en el historial', async () => {
+      const updatedAt = new Date(
+        '2026-09-26T14:30:00.000Z'
+      );
+
+      reportFindFirstMock.mockResolvedValue({
+        id: 'report-1',
+        code: 'CIVIA-REPORT-1',
+        status: 'RECEIVED',
+      });
+
+      reportUpdateMock.mockResolvedValue({
+        id: 'report-1',
+        code: 'CIVIA-REPORT-1',
+        status: 'CANCELLED',
+        updatedAt,
+      });
+
+      historyCreateMock.mockResolvedValue({
+        id: 'history-cancel-1',
+      });
+
+      const result = await service.cancel(
+        'report-1',
+        'user-1'
+      );
+
+      expect(reportFindFirstMock).toHaveBeenCalledWith({
+        where: {
+          id: 'report-1',
+          reporterId: 'user-1',
+        },
+        select: {
+          id: true,
+          code: true,
+          status: true,
+        },
+      });
+
+      expect(reportUpdateMock).toHaveBeenCalledWith({
+        where: {
+          id: 'report-1',
+        },
+        data: {
+          status: 'CANCELLED',
+        },
+        select: {
+          id: true,
+          code: true,
+          status: true,
+          updatedAt: true,
+        },
+      });
+
+      expect(historyCreateMock).toHaveBeenCalledWith({
+        data: {
+          reportId: 'report-1',
+          fromStatus: 'RECEIVED',
+          toStatus: 'CANCELLED',
+          changedByUserId: 'user-1',
+          note: 'Reporte cancelado por el usuario.',
+        },
+      });
+
+      expect(result).toEqual({
+        id: 'report-1',
+        code: 'CIVIA-REPORT-1',
+        status: 'CANCELLED',
+        updatedAt,
+      });
+    });
+
+    it('permite cancelar un reporte en revisión', async () => {
+      reportFindFirstMock.mockResolvedValue({
+        id: 'report-2',
+        code: 'CIVIA-REPORT-2',
+        status: 'UNDER_REVIEW',
+      });
+
+      reportUpdateMock.mockResolvedValue({
+        id: 'report-2',
+        code: 'CIVIA-REPORT-2',
+        status: 'CANCELLED',
+        updatedAt: new Date(
+          '2026-09-26T14:35:00.000Z'
+        ),
+      });
+
+      historyCreateMock.mockResolvedValue({
+        id: 'history-cancel-2',
+      });
+
+      await service.cancel(
+        'report-2',
+        'user-1'
+      );
+
+      expect(historyCreateMock).toHaveBeenCalledWith({
+        data: {
+          reportId: 'report-2',
+          fromStatus: 'UNDER_REVIEW',
+          toStatus: 'CANCELLED',
+          changedByUserId: 'user-1',
+          note: 'Reporte cancelado por el usuario.',
+        },
+      });
+    });
+
+    it('rechaza cancelar un reporte inexistente o de otro usuario', async () => {
+      reportFindFirstMock.mockResolvedValue(null);
+
+      await expect(
+        service.cancel(
+          'report-1',
+          'user-2'
+        )
+      ).rejects.toBeInstanceOf(
+        NotFoundException
+      );
+
+      expect(transactionMock).not.toHaveBeenCalled();
+      expect(reportUpdateMock).not.toHaveBeenCalled();
+      expect(historyCreateMock).not.toHaveBeenCalled();
+    });
+
+    it('rechaza cancelar un reporte que ya está en proceso', async () => {
+      reportFindFirstMock.mockResolvedValue({
+        id: 'report-1',
+        code: 'CIVIA-REPORT-1',
+        status: 'IN_PROGRESS',
+      });
+
+      await expect(
+        service.cancel(
+          'report-1',
+          'user-1'
+        )
+      ).rejects.toBeInstanceOf(
+        BadRequestException
+      );
+
+      expect(transactionMock).not.toHaveBeenCalled();
+      expect(reportUpdateMock).not.toHaveBeenCalled();
+      expect(historyCreateMock).not.toHaveBeenCalled();
+    });
+
+    it('rechaza cancelar nuevamente un reporte ya cancelado', async () => {
+      reportFindFirstMock.mockResolvedValue({
+        id: 'report-1',
+        code: 'CIVIA-REPORT-1',
+        status: 'CANCELLED',
+      });
+
+      await expect(
+        service.cancel(
+          'report-1',
+          'user-1'
+        )
+      ).rejects.toBeInstanceOf(
+        BadRequestException
+      );
+
+      expect(transactionMock).not.toHaveBeenCalled();
+      expect(reportUpdateMock).not.toHaveBeenCalled();
+      expect(historyCreateMock).not.toHaveBeenCalled();
+    });
   });
 
   describe('findMine', () => {
@@ -651,6 +1094,10 @@ describe('ReportsService', () => {
     it('guarda una imagen y crea el registro del adjunto', async () => {
       reportFindFirstMock.mockResolvedValue({
         id: 'report-1',
+        status: 'RECEIVED',
+        _count: {
+          attachments: 0,
+        },
       });
 
       mkdirMock.mockResolvedValue(undefined);
@@ -685,6 +1132,12 @@ describe('ReportsService', () => {
         },
         select: {
           id: true,
+          status: true,
+          _count: {
+            select: {
+              attachments: true,
+            },
+          },
         },
       });
 
@@ -744,6 +1197,10 @@ describe('ReportsService', () => {
     it('rechaza un tipo de archivo no permitido', async () => {
       reportFindFirstMock.mockResolvedValue({
         id: 'report-1',
+        status: 'RECEIVED',
+        _count: {
+          attachments: 0,
+        },
       });
 
       const file = {
@@ -762,6 +1219,177 @@ describe('ReportsService', () => {
 
       expect(writeFileMock).not.toHaveBeenCalled();
       expect(reportAttachmentCreateMock).not.toHaveBeenCalled();
+    });
+
+    it('rechaza agregar evidencia cuando el reporte ya está en revisión', async () => {
+      reportFindFirstMock.mockResolvedValue({
+        id: 'report-1',
+        status: 'UNDER_REVIEW',
+        _count: {
+          attachments: 2,
+        },
+      });
+
+      const file = {
+        buffer: Buffer.from('image-data'),
+        mimetype: 'image/png',
+        originalname: 'evidencia.png',
+      } as Express.Multer.File;
+
+      await expect(
+        service.addAttachment(
+          'report-1',
+          'user-1',
+          file,
+        ),
+      ).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+
+      expect(mkdirMock).not.toHaveBeenCalled();
+      expect(writeFileMock).not.toHaveBeenCalled();
+      expect(reportAttachmentCreateMock).not.toHaveBeenCalled();
+    });
+
+    it('rechaza agregar más de cinco evidencias al mismo reporte', async () => {
+      reportFindFirstMock.mockResolvedValue({
+        id: 'report-1',
+        status: 'RECEIVED',
+        _count: {
+          attachments: 5,
+        },
+      });
+
+      const file = {
+        buffer: Buffer.from('image-data'),
+        mimetype: 'image/png',
+        originalname: 'sexta-evidencia.png',
+      } as Express.Multer.File;
+
+      await expect(
+        service.addAttachment(
+          'report-1',
+          'user-1',
+          file,
+        ),
+      ).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+
+      expect(mkdirMock).not.toHaveBeenCalled();
+      expect(writeFileMock).not.toHaveBeenCalled();
+      expect(reportAttachmentCreateMock).not.toHaveBeenCalled();
+    });
+
+    it('elimina una evidencia de un reporte recibido', async () => {
+      reportAttachmentFindFirstMock.mockResolvedValue({
+        id: 'attachment-1',
+        mimeType: 'image/png',
+        report: {
+          status: 'RECEIVED',
+        },
+      });
+
+      unlinkMock.mockResolvedValue(undefined);
+
+      reportAttachmentDeleteMock.mockResolvedValue({
+        id: 'attachment-1',
+      });
+
+      const result = await service.removeAttachment(
+        'report-1',
+        'attachment-1',
+        'user-1',
+      );
+
+      expect(
+        reportAttachmentFindFirstMock
+      ).toHaveBeenCalledWith({
+        where: {
+          id: 'attachment-1',
+          reportId: 'report-1',
+          report: {
+            reporterId: 'user-1',
+          },
+        },
+        select: {
+          id: true,
+          mimeType: true,
+          report: {
+            select: {
+              status: true,
+            },
+          },
+        },
+      });
+
+      expect(unlinkMock).toHaveBeenCalledWith(
+        join(
+          process.cwd(),
+          'uploads',
+          'reports',
+          'report-1',
+          'attachment-1.png',
+        ),
+      );
+
+      expect(
+        reportAttachmentDeleteMock
+      ).toHaveBeenCalledWith({
+        where: {
+          id: 'attachment-1',
+        },
+      });
+
+      expect(result).toEqual({
+        id: 'attachment-1',
+      });
+    });
+
+    it('rechaza eliminar una evidencia ajena o inexistente', async () => {
+      reportAttachmentFindFirstMock.mockResolvedValue(
+        null
+      );
+
+      await expect(
+        service.removeAttachment(
+          'report-1',
+          'attachment-1',
+          'user-2',
+        ),
+      ).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+
+      expect(unlinkMock).not.toHaveBeenCalled();
+      expect(
+        reportAttachmentDeleteMock
+      ).not.toHaveBeenCalled();
+    });
+
+    it('rechaza eliminar una evidencia cuando el reporte ya está en revisión', async () => {
+      reportAttachmentFindFirstMock.mockResolvedValue({
+        id: 'attachment-1',
+        mimeType: 'image/png',
+        report: {
+          status: 'UNDER_REVIEW',
+        },
+      });
+
+      await expect(
+        service.removeAttachment(
+          'report-1',
+          'attachment-1',
+          'user-1',
+        ),
+      ).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+
+      expect(unlinkMock).not.toHaveBeenCalled();
+      expect(
+        reportAttachmentDeleteMock
+      ).not.toHaveBeenCalled();
     });
 
     it('devuelve el archivo de una evidencia autorizada', async () => {
