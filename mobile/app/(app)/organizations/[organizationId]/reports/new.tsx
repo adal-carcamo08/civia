@@ -1,7 +1,11 @@
+import { fetch as expoFetch } from 'expo/fetch';
+import { File } from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
-import { router, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useCallback, useState } from 'react';
 import {
+  ActivityIndicator,
+  Alert,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -14,21 +18,102 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useAuth } from '../../../../../contexts/auth-context';
+import {
+  ApiError,
+  apiRequest,
+  buildApiUrl,
+} from '../../../../../services/api';
+
+type Category = {
+  id: string;
+  name: string;
+  description: string | null;
+  department: {
+    id: string;
+    name: string;
+  } | null;
+};
+
+type CreatedReport = {
+  id: string;
+  code: string;
+  status: 'RECEIVED';
+  description: string;
+  location: string;
+  latitude: number | null;
+  longitude: number | null;
+  createdAt: string;
+};
 
 export default function NewReportScreen() {
-  const { organizationId } = useLocalSearchParams<{
-    organizationId: string;
+  const params = useLocalSearchParams<{
+    organizationId?: string | string[];
   }>();
+
+  const { token } = useAuth();
+
+  const organizationId = Array.isArray(params.organizationId)
+    ? params.organizationId[0]
+    : params.organizationId;
 
   const [description, setDescription] = useState('');
   const [location, setLocation] = useState('');
-  const [selectedCategory] = useState('');
-  const [categoryModalVisible, setCategoryModalVisible] = useState(false);
+  const [selectedCategory, setSelectedCategory] =
+    useState<Category | null>(null);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [isLoadingCategories, setIsLoadingCategories] =
+    useState(true);
+  const [categoryLoadError, setCategoryLoadError] =
+    useState('');
+  const [categoryModalVisible, setCategoryModalVisible] =
+    useState(false);
   const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
+  const [otherProblemType, setOtherProblemType] = useState('');
   const [categoryError, setCategoryError] = useState('');
+  const [otherProblemTypeError, setOtherProblemTypeError] =
+    useState('');
   const [descriptionError, setDescriptionError] = useState('');
   const [locationError, setLocationError] = useState('');
   const [photoError, setPhotoError] = useState('');
+
+  const loadCategories = useCallback(async () => {
+    if (!token || !organizationId) {
+      setCategories([]);
+      setIsLoadingCategories(false);
+      return;
+    }
+
+    setIsLoadingCategories(true);
+    setCategoryLoadError('');
+
+    try {
+      const response = await apiRequest<Category[]>(
+        `/organizations/${organizationId}/categories`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      setCategories(response);
+    } catch {
+      setCategoryLoadError(
+        'No pudimos cargar las categorías de esta organización.'
+      );
+    } finally {
+      setIsLoadingCategories(false);
+    }
+  }, [organizationId, token]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadCategories();
+    }, [loadCategories])
+  );
 
   const selectPhoto = async () => {
     setPhotoError('');
@@ -52,19 +137,44 @@ export default function NewReportScreen() {
     });
 
     if (!result.canceled && result.assets.length > 0) {
-      setPhotoUri(result.assets[0].uri);
+      const asset = result.assets[0];
+
+      setPhotoUri(asset.uri);
     }
   };
 
-  const validateForm = () => {
+  const validateForm = async () => {
+    if (isSubmitting) {
+      return;
+    }
     let isValid = true;
 
     setCategoryError('');
+    setOtherProblemTypeError('');
     setDescriptionError('');
     setLocationError('');
+    setSubmitError('');
 
     if (!selectedCategory) {
       setCategoryError('Selecciona una categoría.');
+      isValid = false;
+    }
+
+    if (
+      selectedCategory?.name === 'Otro / No estoy seguro' &&
+      !otherProblemType.trim()
+    ) {
+      setOtherProblemTypeError(
+        'Indica brevemente qué tipo de problema deseas reportar.'
+      );
+      isValid = false;
+    } else if (
+      selectedCategory?.name === 'Otro / No estoy seguro' &&
+      otherProblemType.trim().length < 3
+    ) {
+      setOtherProblemTypeError(
+        'Describe un poco mejor el tipo de problema.'
+      );
       isValid = false;
     }
 
@@ -83,6 +193,105 @@ export default function NewReportScreen() {
 
     if (!isValid) {
       return;
+    }
+
+    if (!token || !organizationId || !selectedCategory) {
+      setSubmitError(
+        'No pudimos preparar el reporte. Regresa e inténtalo nuevamente.'
+      );
+      return;
+    }
+
+    const normalizedDescription = description.trim();
+    const normalizedLocation = location.trim();
+
+    const finalDescription =
+      selectedCategory.name === 'Otro / No estoy seguro'
+        ? `Tipo de problema: ${otherProblemType.trim()}
+
+${normalizedDescription}`
+        : normalizedDescription;
+
+    setIsSubmitting(true);
+
+    try {
+      const createdReport = await apiRequest<CreatedReport>(
+        '/reports',
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            organizationId,
+            categoryId: selectedCategory.id,
+            description: finalDescription,
+            location: normalizedLocation,
+          }),
+        }
+      );
+
+      if (photoUri) {
+        try {
+          const file = new File(photoUri);
+          const formData = new FormData();
+
+          formData.append('file', file);
+
+          const uploadResponse = await expoFetch(
+            buildApiUrl(
+              `/reports/${createdReport.id}/attachments`
+            ),
+            {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+              body: formData,
+            }
+          );
+
+          if (!uploadResponse.ok) {
+            const responseBody =
+              await uploadResponse.text();
+
+            throw new Error(
+              `Servidor (${uploadResponse.status}): ${
+                responseBody ||
+                'No fue posible adjuntar la fotografía.'
+              }`
+            );
+          }
+        } catch (uploadError) {
+          Alert.alert(
+            'Reporte creado',
+            `El reporte fue enviado correctamente, pero no pudimos adjuntar la fotografía.
+
+${
+  uploadError instanceof Error
+    ? uploadError.message
+    : 'Error desconocido durante la subida.'
+}`
+          );
+        }
+      }
+
+      router.replace({
+        pathname: '/reports/[reportId]',
+        params: {
+          reportId: createdReport.id,
+        },
+      });
+    } catch (error) {
+      if (error instanceof ApiError) {
+        setSubmitError(error.message);
+      } else {
+        setSubmitError(
+          'No pudimos enviar el reporte. Verifica tu conexión e inténtalo nuevamente.'
+        );
+      }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -129,7 +338,10 @@ export default function NewReportScreen() {
                       </Pressable>
 
                       <Pressable
-                        onPress={() => setPhotoUri(null)}
+                        onPress={() => {
+                          setPhotoUri(null);
+                          setPhotoError('');
+                        }}
                         style={({ pressed }) => [
                           styles.removePhotoButton,
                           pressed ? styles.buttonPressed : undefined,
@@ -182,7 +394,7 @@ export default function NewReportScreen() {
                         : styles.categoryText
                     }
                   >
-                    {selectedCategory || 'Seleccionar categoría'}
+                    {selectedCategory?.name ?? 'Seleccionar categoría'}
                   </Text>
 
                   <View style={styles.categoryArrow} />
@@ -196,6 +408,46 @@ export default function NewReportScreen() {
                   </Text>
                 )}
               </View>
+
+              {selectedCategory?.name ===
+              'Otro / No estoy seguro' ? (
+                <View style={styles.field}>
+                  <Text style={styles.label}>
+                    ¿Qué tipo de problema es?
+                  </Text>
+
+                  <TextInput
+                    value={otherProblemType}
+                    onChangeText={(value) => {
+                      setOtherProblemType(value);
+
+                      if (otherProblemTypeError) {
+                        setOtherProblemTypeError('');
+                      }
+                    }}
+                    placeholder="Ej. Árbol en riesgo de caer"
+                    placeholderTextColor="#98A2B3"
+                    autoCapitalize="sentences"
+                    maxLength={100}
+                    style={[
+                      styles.input,
+                      otherProblemTypeError
+                        ? styles.inputError
+                        : undefined,
+                    ]}
+                  />
+
+                  {otherProblemTypeError ? (
+                    <Text style={styles.errorText}>
+                      {otherProblemTypeError}
+                    </Text>
+                  ) : (
+                    <Text style={styles.helperText}>
+                      Describe brevemente el tipo de incidencia.
+                    </Text>
+                  )}
+                </View>
+              ) : null}
 
               <View style={styles.field}>
                 <Text style={styles.label}>Descripción</Text>
@@ -258,23 +510,51 @@ export default function NewReportScreen() {
                 ) : null}
               </View>
 
+              {submitError ? (
+                <Text style={styles.submitError}>
+                  {submitError}
+                </Text>
+              ) : null}
+
               <Pressable
-                onPress={validateForm}
+                onPress={() => {
+                  void validateForm();
+                }}
+                disabled={isSubmitting}
                 style={({ pressed }) => [
                   styles.primaryButton,
-                  pressed ? styles.buttonPressed : undefined,
+                  pressed && !isSubmitting
+                    ? styles.buttonPressed
+                    : undefined,
+                  isSubmitting
+                    ? styles.primaryButtonDisabled
+                    : undefined,
                 ]}
               >
-                <Text style={styles.primaryButtonText}>Continuar</Text>
+                {isSubmitting ? (
+                  <ActivityIndicator
+                    size="small"
+                    color="#FFFFFF"
+                  />
+                ) : (
+                  <Text style={styles.primaryButtonText}>
+                    Enviar reporte
+                  </Text>
+                )}
               </Pressable>
 
               <Pressable
-                onPress={() =>
+                onPress={() => {
+                  if (!organizationId) {
+                    router.replace('/organizations');
+                    return;
+                  }
+
                   router.replace({
                     pathname: '/organizations/[organizationId]',
                     params: { organizationId },
-                  })
-                }
+                  });
+                }}
                 style={({ pressed }) => [
                   styles.secondaryButton,
                   pressed ? styles.buttonPressed : undefined,
@@ -295,13 +575,108 @@ export default function NewReportScreen() {
               <View style={styles.modalCard}>
                 <Text style={styles.modalTitle}>Seleccionar categoría</Text>
 
-                <Text style={styles.modalEmptyText}>
-                  No hay categorías disponibles.
-                </Text>
+                {isLoadingCategories ? (
+                  <View style={styles.modalState}>
+                    <ActivityIndicator
+                      size="small"
+                      color="#17365D"
+                    />
 
-                <Text style={styles.modalHelperText}>
-                  Las opciones aparecerán cuando se carguen desde la organización.
-                </Text>
+                    <Text style={styles.modalHelperText}>
+                      Cargando categorías...
+                    </Text>
+                  </View>
+                ) : categoryLoadError ? (
+                  <View style={styles.modalState}>
+                    <Text style={styles.modalEmptyText}>
+                      No pudimos cargar las categorías.
+                    </Text>
+
+                    <Text style={styles.modalHelperText}>
+                      {categoryLoadError}
+                    </Text>
+
+                    <Pressable
+                      onPress={() => {
+                        void loadCategories();
+                      }}
+                      style={({ pressed }) => [
+                        styles.retryButton,
+                        pressed
+                          ? styles.buttonPressed
+                          : undefined,
+                      ]}
+                    >
+                      <Text style={styles.retryButtonText}>
+                        Intentar nuevamente
+                      </Text>
+                    </Pressable>
+                  </View>
+                ) : categories.length === 0 ? (
+                  <View style={styles.modalState}>
+                    <Text style={styles.modalEmptyText}>
+                      No hay categorías disponibles.
+                    </Text>
+
+                    <Text style={styles.modalHelperText}>
+                      Esta organización aún no tiene categorías activas.
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={styles.categoryOptions}>
+                    {categories.map((category) => (
+                      <Pressable
+                        key={category.id}
+                        onPress={() => {
+                          setSelectedCategory(category);
+                          setCategoryError('');
+                          setOtherProblemTypeError('');
+
+                          if (
+                            category.name !==
+                            'Otro / No estoy seguro'
+                          ) {
+                            setOtherProblemType('');
+                          }
+
+                          setCategoryModalVisible(false);
+                        }}
+                        style={({ pressed }) => [
+                          styles.categoryOption,
+                          selectedCategory?.id === category.id
+                            ? styles.categoryOptionSelected
+                            : undefined,
+                          pressed
+                            ? styles.buttonPressed
+                            : undefined,
+                        ]}
+                      >
+                        <Text
+                          style={styles.categoryOptionTitle}
+                        >
+                          {category.name}
+                        </Text>
+
+                        {category.department ? (
+                          <Text
+                            style={styles.categoryOptionDepartment}
+                          >
+                            {category.department.name}
+                          </Text>
+                        ) : null}
+
+                        {category.description ? (
+                          <Text
+                            style={styles.categoryOptionDescription}
+                            numberOfLines={2}
+                          >
+                            {category.description}
+                          </Text>
+                        ) : null}
+                      </Pressable>
+                    ))}
+                  </View>
+                )}
 
                 <Pressable
                   onPress={() => setCategoryModalVisible(false)}
@@ -524,6 +899,15 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF',
   },
+  primaryButtonDisabled: {
+    opacity: 0.7,
+  },
+  submitError: {
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
+    color: '#D92D20',
+  },
   secondaryButton: {
     height: 54,
     alignItems: 'center',
@@ -565,6 +949,54 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     color: '#667085',
+  },
+  modalState: {
+    marginTop: 20,
+    alignItems: 'center',
+  },
+  categoryOptions: {
+    gap: 10,
+    marginTop: 20,
+  },
+  categoryOption: {
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E4E7EC',
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+  },
+  categoryOptionSelected: {
+    borderColor: '#2F75B5',
+    backgroundColor: '#F2F7FC',
+  },
+  categoryOptionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1F2937',
+  },
+  categoryOptionDepartment: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#2F75B5',
+  },
+  categoryOptionDescription: {
+    marginTop: 5,
+    fontSize: 13,
+    lineHeight: 18,
+    color: '#667085',
+  },
+  retryButton: {
+    marginTop: 16,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: '#17365D',
+  },
+  retryButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   modalButton: {
     height: 50,
