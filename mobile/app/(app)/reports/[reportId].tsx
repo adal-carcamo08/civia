@@ -9,6 +9,7 @@ import {
 } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Image,
   Modal,
   Pressable,
@@ -32,7 +33,8 @@ type ReportStatus =
   | 'IN_PROGRESS'
   | 'RESOLVED'
   | 'NOT_APPLICABLE'
-  | 'REJECTED';
+  | 'REJECTED'
+  | 'CANCELLED';
 
 type ReportDetail = {
   id: string;
@@ -89,6 +91,7 @@ const statusLabels: Record<ReportStatus, string> = {
   RESOLVED: 'Resuelto',
   NOT_APPLICABLE: 'No procede',
   REJECTED: 'Rechazado',
+  CANCELLED: 'Cancelado',
 };
 
 function formatDate(value: string) {
@@ -119,6 +122,7 @@ export default function ReportDetailScreen() {
       null
     );
   const [isLoading, setIsLoading] = useState(true);
+  const [isCancelling, setIsCancelling] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
   const loadReport = useCallback(async () => {
@@ -168,6 +172,82 @@ export default function ReportDetailScreen() {
       void loadReport();
     }, [loadReport])
   );
+
+  const cancelReport = useCallback(async () => {
+    if (
+      !token ||
+      !reportId ||
+      !report ||
+      isCancelling
+    ) {
+      return;
+    }
+
+    setIsCancelling(true);
+
+    try {
+      await apiRequest(
+        `/reports/${reportId}/cancel`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      await loadReport();
+
+      Alert.alert(
+        'Reporte cancelado',
+        'El reporte fue cancelado correctamente y se conservó en tu historial.'
+      );
+    } catch (error) {
+      if (error instanceof ApiError) {
+        Alert.alert(
+          'No pudimos cancelar el reporte',
+          error.message
+        );
+      } else {
+        Alert.alert(
+          'No pudimos cancelar el reporte',
+          'Verifica tu conexión e inténtalo nuevamente.'
+        );
+      }
+    } finally {
+      setIsCancelling(false);
+    }
+  }, [
+    isCancelling,
+    loadReport,
+    report,
+    reportId,
+    token,
+  ]);
+
+  const confirmCancelReport = useCallback(() => {
+    if (!report || isCancelling) {
+      return;
+    }
+
+    Alert.alert(
+      'Cancelar reporte',
+      '¿Estás seguro de que deseas cancelar este reporte? El reporte no se eliminará y permanecerá en tu historial.',
+      [
+        {
+          text: 'No, conservar',
+          style: 'cancel',
+        },
+        {
+          text: 'Sí, cancelar',
+          style: 'destructive',
+          onPress: () => {
+            void cancelReport();
+          },
+        },
+      ]
+    );
+  }, [cancelReport, isCancelling, report]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -252,6 +332,44 @@ export default function ReportDetailScreen() {
                   Actualizado {formatDate(report.updatedAt)}
                 </Text>
               </View>
+
+              {report.status === 'RECEIVED' ||
+              report.status === 'UNDER_REVIEW' ? (
+                <View style={styles.actionsSection}>
+                  <Text style={styles.actionsTitle}>
+                    Acciones del reporte
+                  </Text>
+
+                  <Pressable
+                    disabled={isCancelling}
+                    onPress={confirmCancelReport}
+                    style={({ pressed }) => [
+                      styles.cancelButton,
+                      pressed && !isCancelling
+                        ? styles.buttonPressed
+                        : undefined,
+                      isCancelling
+                        ? styles.disabledButton
+                        : undefined,
+                    ]}
+                  >
+                    {isCancelling ? (
+                      <ActivityIndicator
+                        size="small"
+                        color="#B42318"
+                      />
+                    ) : (
+                      <Text style={styles.cancelButtonText}>
+                        Cancelar reporte
+                      </Text>
+                    )}
+                  </Pressable>
+
+                  <Text style={styles.actionHelperText}>
+                    La cancelación conservará el reporte y su historial.
+                  </Text>
+                </View>
+              ) : null}
 
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>
@@ -700,6 +818,43 @@ const styles = StyleSheet.create({
     marginTop: 10,
     fontSize: 12,
     color: '#98A2B3',
+  },
+  actionsSection: {
+    marginTop: 20,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+  },
+  actionsTitle: {
+    marginBottom: 12,
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1F2937',
+  },
+  cancelButton: {
+    height: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#FDA29B',
+    borderRadius: 12,
+    backgroundColor: '#FEF3F2',
+  },
+  cancelButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#B42318',
+  },
+  actionHelperText: {
+    marginTop: 9,
+    fontSize: 12,
+    lineHeight: 18,
+    color: '#667085',
+  },
+  disabledButton: {
+    opacity: 0.55,
   },
   section: {
     marginTop: 28,
