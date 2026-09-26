@@ -14,6 +14,11 @@ import {
 import { extname, join } from 'path';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateReportDto } from './dto/create-report.dto';
+import { AssignOrganizationReportDto } from './dto/assign-organization-report.dto';
+import {
+  OrganizationReportStatus,
+  UpdateOrganizationReportStatusDto,
+} from './dto/update-organization-report-status.dto';
 import { UpdateReportDto } from './dto/update-report.dto';
 
 @Injectable()
@@ -764,4 +769,638 @@ export class ReportsService {
     } catch {
       throw new NotFoundException('Evidencia no encontrada.');
     }
-  }}
+  }
+  private async requireOrganizationOperator(
+    organizationId: string,
+    userId: string,
+  ) {
+    const user = await this.prisma.user.findUnique({
+      where: {
+        id: userId,
+      },
+      select: {
+        id: true,
+        role: true,
+        active: true,
+      },
+    });
+
+    if (!user || !user.active) {
+      throw new ForbiddenException(
+        'No tienes autorización para gestionar esta organización.',
+      );
+    }
+
+    if (user.role === 'GLOBAL_ADMIN') {
+      const organization =
+        await this.prisma.organization.findFirst({
+          where: {
+            id: organizationId,
+            active: true,
+          },
+          select: {
+            id: true,
+          },
+        });
+
+      if (!organization) {
+        throw new NotFoundException(
+          'Organización no encontrada.',
+        );
+      }
+
+      return {
+        accessRole: 'GLOBAL_ADMIN' as const,
+      };
+    }
+
+    const membership =
+      await this.prisma.membership.findFirst({
+        where: {
+          userId,
+          organizationId,
+          status: 'ACTIVE',
+          role: {
+            in: ['STAFF', 'ADMIN'],
+          },
+          organization: {
+            active: true,
+          },
+        },
+        select: {
+          role: true,
+        },
+      });
+
+    if (!membership) {
+      throw new ForbiddenException(
+        'Solo el personal autorizado puede gestionar reportes de esta organización.',
+      );
+    }
+
+    return {
+      accessRole: membership.role,
+    };
+  }
+
+  async findAdminReports(
+    organizationId: string,
+    userId: string,
+  ) {
+    await this.requireOrganizationOperator(
+      organizationId,
+      userId,
+    );
+
+    return this.prisma.report.findMany({
+      where: {
+        organizationId,
+      },
+      select: {
+        id: true,
+        code: true,
+        status: true,
+        description: true,
+        location: true,
+        resolvedAt: true,
+        createdAt: true,
+        updatedAt: true,
+        reporter: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+          },
+        },
+        category: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        department: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        assignedTo: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+          },
+        },
+        _count: {
+          select: {
+            attachments: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+  }
+
+  async findAdminReport(
+    organizationId: string,
+    reportId: string,
+    userId: string,
+  ) {
+    await this.requireOrganizationOperator(
+      organizationId,
+      userId,
+    );
+
+    const report =
+      await this.prisma.report.findFirst({
+        where: {
+          id: reportId,
+          organizationId,
+        },
+        select: {
+          id: true,
+          code: true,
+          status: true,
+          description: true,
+          location: true,
+          latitude: true,
+          longitude: true,
+          resolvedAt: true,
+          createdAt: true,
+          updatedAt: true,
+          reporter: {
+            select: {
+              id: true,
+              fullName: true,
+              email: true,
+            },
+          },
+          organization: {
+            select: {
+              id: true,
+              name: true,
+              type: true,
+            },
+          },
+          category: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+          department: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+          assignedTo: {
+            select: {
+              id: true,
+              fullName: true,
+              email: true,
+            },
+          },
+          attachments: {
+            select: {
+              id: true,
+              url: true,
+              fileName: true,
+              mimeType: true,
+              createdAt: true,
+            },
+            orderBy: {
+              createdAt: 'asc',
+            },
+          },
+          history: {
+            select: {
+              id: true,
+              fromStatus: true,
+              toStatus: true,
+              note: true,
+              createdAt: true,
+              changedBy: {
+                select: {
+                  id: true,
+                  fullName: true,
+                },
+              },
+            },
+            orderBy: {
+              createdAt: 'asc',
+            },
+          },
+        },
+      });
+
+    if (!report) {
+      throw new NotFoundException(
+        'Reporte no encontrado.',
+      );
+    }
+
+    return report;
+  }
+
+  async updateOrganizationReportStatus(
+    organizationId: string,
+    reportId: string,
+    userId: string,
+    dto: UpdateOrganizationReportStatusDto,
+  ) {
+    await this.requireOrganizationOperator(
+      organizationId,
+      userId,
+    );
+
+    const report =
+      await this.prisma.report.findFirst({
+        where: {
+          id: reportId,
+          organizationId,
+        },
+        select: {
+          id: true,
+          status: true,
+          assignedToUserId: true,
+        },
+      });
+
+    if (!report) {
+      throw new NotFoundException(
+        'Reporte no encontrado.',
+      );
+    }
+
+    const terminalStatuses = [
+      'RESOLVED',
+      'NOT_APPLICABLE',
+      'REJECTED',
+      'CANCELLED',
+    ];
+
+    if (
+      terminalStatuses.includes(
+        report.status,
+      )
+    ) {
+      throw new BadRequestException(
+        'Este reporte ya se encuentra en un estado final.',
+      );
+    }
+
+    const allowedTransitions: Record<
+      string,
+      OrganizationReportStatus[]
+    > = {
+      RECEIVED: [
+        'UNDER_REVIEW',
+        'NOT_APPLICABLE',
+        'REJECTED',
+      ],
+      UNDER_REVIEW: [
+        'NOT_APPLICABLE',
+        'REJECTED',
+      ],
+      ASSIGNED: [
+        'IN_PROGRESS',
+      ],
+      IN_PROGRESS: [
+        'RESOLVED',
+      ],
+    };
+
+    const allowed =
+      allowedTransitions[report.status] ??
+      [];
+
+    if (!allowed.includes(dto.status)) {
+      throw new BadRequestException(
+        `No se puede cambiar el reporte de ${report.status} a ${dto.status}.`,
+      );
+    }
+
+    if (
+      dto.status === 'IN_PROGRESS' &&
+      !report.assignedToUserId
+    ) {
+      throw new BadRequestException(
+        'Debes asignar un responsable antes de iniciar el trabajo.',
+      );
+    }
+
+    const trimmedNote =
+      dto.note?.trim();
+
+    const defaultNotes: Record<
+      OrganizationReportStatus,
+      string
+    > = {
+      UNDER_REVIEW:
+        'Reporte puesto en revisión.',
+      IN_PROGRESS:
+        'Atención del reporte iniciada.',
+      RESOLVED:
+        'Reporte marcado como resuelto.',
+      NOT_APPLICABLE:
+        'Reporte marcado como no procede.',
+      REJECTED:
+        'Reporte rechazado por la organización.',
+    };
+
+    return this.prisma.$transaction(
+      async (tx) => {
+        const updated =
+          await tx.report.update({
+            where: {
+              id: report.id,
+            },
+            data: {
+              status: dto.status,
+              ...(dto.status ===
+              'RESOLVED'
+                ? {
+                    resolvedAt:
+                      new Date(),
+                  }
+                : {}),
+            },
+            select: {
+              id: true,
+              code: true,
+              status: true,
+              resolvedAt: true,
+              updatedAt: true,
+            },
+          });
+
+        await tx.reportStatusHistory.create(
+          {
+            data: {
+              reportId: report.id,
+              fromStatus:
+                report.status,
+              toStatus:
+                dto.status,
+              changedByUserId:
+                userId,
+              note:
+                trimmedNote ||
+                defaultNotes[
+                  dto.status
+                ],
+            },
+          },
+        );
+
+        return updated;
+      },
+    );
+  }
+
+  async assignOrganizationReport(
+    organizationId: string,
+    reportId: string,
+    userId: string,
+    dto: AssignOrganizationReportDto,
+  ) {
+    await this.requireOrganizationOperator(
+      organizationId,
+      userId,
+    );
+
+    const report =
+      await this.prisma.report.findFirst({
+        where: {
+          id: reportId,
+          organizationId,
+        },
+        select: {
+          id: true,
+          status: true,
+        },
+      });
+
+    if (!report) {
+      throw new NotFoundException(
+        'Reporte no encontrado.',
+      );
+    }
+
+    if (
+      ![
+        'RECEIVED',
+        'UNDER_REVIEW',
+        'ASSIGNED',
+        'IN_PROGRESS',
+      ].includes(report.status)
+    ) {
+      throw new BadRequestException(
+        'El reporte ya no puede ser asignado en su estado actual.',
+      );
+    }
+
+    const department =
+      await this.prisma.department.findFirst({
+        where: {
+          id: dto.departmentId,
+          organizationId,
+          active: true,
+        },
+        select: {
+          id: true,
+          name: true,
+        },
+      });
+
+    if (!department) {
+      throw new NotFoundException(
+        'El departamento seleccionado no existe o no está activo.',
+      );
+    }
+
+    const assigneeMembership =
+      await this.prisma.membership.findFirst({
+        where: {
+          organizationId,
+          userId:
+            dto.assignedToUserId,
+          status: 'ACTIVE',
+          role: {
+            in: [
+              'STAFF',
+              'ADMIN',
+            ],
+          },
+        },
+        select: {
+          user: {
+            select: {
+              id: true,
+              fullName: true,
+              email: true,
+            },
+          },
+        },
+      });
+
+    if (!assigneeMembership) {
+      throw new BadRequestException(
+        'El responsable debe ser personal activo de esta organización.',
+      );
+    }
+
+    const nextStatus =
+      report.status === 'RECEIVED' ||
+      report.status ===
+        'UNDER_REVIEW'
+        ? 'ASSIGNED'
+        : report.status;
+
+    const customNote =
+      dto.note?.trim();
+
+    const assignmentNote =
+      customNote ||
+      `Reporte asignado a ${assigneeMembership.user.fullName} en ${department.name}.`;
+
+    return this.prisma.$transaction(
+      async (tx) => {
+        const updated =
+          await tx.report.update({
+            where: {
+              id: report.id,
+            },
+            data: {
+              departmentId:
+                department.id,
+              assignedToUserId:
+                assigneeMembership
+                  .user.id,
+              status:
+                nextStatus,
+            },
+            select: {
+              id: true,
+              code: true,
+              status: true,
+              department: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+              assignedTo: {
+                select: {
+                  id: true,
+                  fullName: true,
+                  email: true,
+                },
+              },
+              updatedAt: true,
+            },
+          });
+
+        await tx.reportStatusHistory.create(
+          {
+            data: {
+              reportId: report.id,
+              fromStatus:
+                report.status,
+              toStatus:
+                nextStatus,
+              changedByUserId:
+                userId,
+              note:
+                assignmentNote,
+            },
+          },
+        );
+
+        return updated;
+      },
+    );
+  }
+
+  async getAdminAttachmentFile(
+    organizationId: string,
+    reportId: string,
+    attachmentId: string,
+    userId: string,
+  ) {
+    await this.requireOrganizationOperator(
+      organizationId,
+      userId,
+    );
+
+    const attachment =
+      await this.prisma.reportAttachment.findFirst({
+        where: {
+          id: attachmentId,
+          reportId,
+          report: {
+            organizationId,
+          },
+        },
+        select: {
+          id: true,
+          mimeType: true,
+        },
+      });
+
+    if (
+      !attachment ||
+      !attachment.mimeType
+    ) {
+      throw new NotFoundException(
+        'Evidencia no encontrada.',
+      );
+    }
+
+    const extensions: Record<
+      string,
+      string
+    > = {
+      'image/jpeg': '.jpg',
+      'image/png': '.png',
+      'image/webp': '.webp',
+    };
+
+    const extension =
+      extensions[
+        attachment.mimeType
+      ];
+
+    if (!extension) {
+      throw new NotFoundException(
+        'Evidencia no encontrada.',
+      );
+    }
+
+    const filePath = join(
+      process.cwd(),
+      'uploads',
+      'reports',
+      reportId,
+      `${attachment.id}${extension}`,
+    );
+
+    try {
+      const buffer =
+        await readFile(filePath);
+
+      return {
+        buffer,
+        mimeType:
+          attachment.mimeType,
+      };
+    } catch {
+      throw new NotFoundException(
+        'Evidencia no encontrada.',
+      );
+    }
+  }
+}

@@ -72,10 +72,6 @@ export function AuthProvider({
         return;
       }
 
-      if (mounted) {
-        setToken(storedToken);
-      }
-
       try {
         const currentUser = await apiRequest<AuthUser>(
           '/auth/me',
@@ -90,6 +86,7 @@ export function AuthProvider({
           return;
         }
 
+        setToken(storedToken);
         setUser(currentUser);
       } catch (error) {
         if (

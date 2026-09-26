@@ -36,7 +36,7 @@ export default function OrganizationHomeScreen() {
     organizationId: string;
   }>();
 
-  const { token } = useAuth();
+  const { token, user } = useAuth();
 
   const [organization, setOrganization] =
     useState<OrganizationDetail | null>(null);
@@ -224,6 +224,28 @@ export default function OrganizationHomeScreen() {
                   Ver reportes de la organización
                 </Text>
               </Pressable>
+
+              {(
+                user?.role === 'GLOBAL_ADMIN' ||
+                organization.membershipRole === 'ADMIN' ||
+                organization.membershipRole === 'STAFF'
+              ) ? (
+                <Pressable
+                  onPress={() =>
+                    router.push(
+                      `/organizations/${organizationId}/admin` as never
+                    )
+                  }
+                  style={({ pressed }) => [
+                    styles.adminButton,
+                    pressed ? styles.buttonPressed : undefined,
+                  ]}
+                >
+                  <Text style={styles.adminButtonText}>
+                    Gestionar organización
+                  </Text>
+                </Pressable>
+              ) : null}
             </View>
 
             <View style={styles.infoCard}>
@@ -383,6 +405,18 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#17365D',
+  },
+  adminButton: {
+    height: 54,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    backgroundColor: '#2F8F9D',
+  },
+  adminButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   infoCard: {
     marginTop: 28,
