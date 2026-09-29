@@ -10,20 +10,22 @@ export class RegisterDto {
   @IsString()
   @MinLength(3)
   @MaxLength(100)
-  fullName: string;
+  fullName!: string;
 
   @IsEmail()
   @MaxLength(150)
-  email: string;
+  email!: string;
 
   @IsString()
   @MinLength(8)
   @MaxLength(72)
   @Matches(/[A-Za-z]/, {
-    message: 'La contraseña debe incluir al menos una letra.',
+    message:
+      'La contraseña debe incluir al menos una letra.',
   })
   @Matches(/\d/, {
-    message: 'La contraseña debe incluir al menos un número.',
+    message:
+      'La contraseña debe incluir al menos un número.',
   })
-  password: string;
+  password!: string;
 }

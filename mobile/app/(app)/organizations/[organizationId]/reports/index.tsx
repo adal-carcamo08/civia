@@ -194,8 +194,27 @@ export default function OrganizationReportsScreen() {
     });
   };
 
+  const openReport = (
+    reportId: string
+  ) => {
+    if (!organizationId) {
+      return;
+    }
+
+    router.push({
+      pathname:
+        '/organizations/[organizationId]/reports/[reportId]',
+      params: {
+        organizationId,
+        reportId,
+      },
+    });
+  };
+
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView
+      style={styles.safeArea}
+    >
       <ScrollView
         contentContainerStyle={
           styles.container
@@ -213,11 +232,14 @@ export default function OrganizationReportsScreen() {
         </Text>
 
         <Text style={styles.subtitle}>
-          Consulta los reportes registrados dentro de esta organización.
+          Consulta los reportes registrados
+          dentro de esta organización.
         </Text>
 
         {isLoading ? (
-          <View style={styles.centerState}>
+          <View
+            style={styles.centerState}
+          >
             <ActivityIndicator
               size="large"
               color="#17365D"
@@ -230,11 +252,14 @@ export default function OrganizationReportsScreen() {
             </Text>
           </View>
         ) : loadError ? (
-          <View style={styles.centerState}>
+          <View
+            style={styles.centerState}
+          >
             <Text
               style={styles.emptyTitle}
             >
-              No pudimos cargar los reportes
+              No pudimos cargar los
+              reportes
             </Text>
 
             <Text
@@ -264,16 +289,14 @@ export default function OrganizationReportsScreen() {
             </Pressable>
           </View>
         ) : reports.length === 0 ? (
-          <View style={styles.centerState}>
+          <View
+            style={styles.centerState}
+          >
             <View
-              style={
-                styles.iconCircle
-              }
+              style={styles.iconCircle}
             >
               <Text
-                style={
-                  styles.iconText
-                }
+                style={styles.iconText}
               >
                 !
               </Text>
@@ -288,15 +311,15 @@ export default function OrganizationReportsScreen() {
             <Text
               style={styles.emptyText}
             >
-              Los reportes de esta organización aparecerán aquí cuando estén disponibles.
+              Los reportes de esta
+              organización aparecerán aquí
+              cuando estén disponibles.
             </Text>
           </View>
         ) : (
           <View style={styles.list}>
             <Text
-              style={
-                styles.resultCount
-              }
+              style={styles.resultCount}
             >
               {reports.length === 1
                 ? '1 reporte'
@@ -305,11 +328,21 @@ export default function OrganizationReportsScreen() {
 
             {reports.map(
               (report) => (
-                <View
+                <Pressable
                   key={report.id}
-                  style={
-                    styles.reportCard
+                  onPress={() =>
+                    openReport(
+                      report.id
+                    )
                   }
+                  style={({
+                    pressed,
+                  }) => [
+                    styles.reportCard,
+                    pressed
+                      ? styles.cardPressed
+                      : undefined,
+                  ]}
                 >
                   <View
                     style={
@@ -389,7 +422,8 @@ export default function OrganizationReportsScreen() {
                         styles.metaText
                       }
                     >
-                      Ubicación: {report.location ??
+                      Ubicación:{' '}
+                      {report.location ??
                         'No especificada'}
                     </Text>
 
@@ -398,7 +432,8 @@ export default function OrganizationReportsScreen() {
                         styles.metaText
                       }
                     >
-                      Reportado por: {
+                      Reportado por:{' '}
+                      {
                         report.reporter
                           .fullName
                       }
@@ -409,11 +444,10 @@ export default function OrganizationReportsScreen() {
                         styles.metaText
                       }
                     >
-                      Departamento: {
-                        report.department
-                          ?.name ??
-                        'Pendiente de asignación'
-                      }
+                      Departamento:{' '}
+                      {report.department
+                        ?.name ??
+                        'Pendiente de asignación'}
                     </Text>
 
                     <Text
@@ -421,23 +455,42 @@ export default function OrganizationReportsScreen() {
                         styles.metaText
                       }
                     >
-                      Responsable: {
-                        report.assignedTo
-                          ?.fullName ??
-                        'Pendiente de asignación'
-                      }
+                      Responsable:{' '}
+                      {report.assignedTo
+                        ?.fullName ??
+                        'Pendiente de asignación'}
                     </Text>
                   </View>
-                </View>
+
+                  <View
+                    style={
+                      styles.detailRow
+                    }
+                  >
+                    <Text
+                      style={
+                        styles.detailText
+                      }
+                    >
+                      Ver detalle
+                    </Text>
+
+                    <Text
+                      style={
+                        styles.detailArrow
+                      }
+                    >
+                      ›
+                    </Text>
+                  </View>
+                </Pressable>
               )
             )}
           </View>
         )}
 
         <View
-          style={
-            styles.footerActions
-          }
+          style={styles.footerActions}
         >
           <Pressable
             onPress={createReport}
@@ -480,176 +533,240 @@ export default function OrganizationReportsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#F7F9FB',
-  },
-  container: {
-    flexGrow: 1,
-    paddingHorizontal: 28,
-    paddingVertical: 32,
-  },
-  brand: {
-    marginBottom: 24,
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#17365D',
-  },
-  title: {
-    fontSize: 32,
-    lineHeight: 39,
-    fontWeight: '700',
-    color: '#1F2937',
-  },
-  subtitle: {
-    marginTop: 10,
-    fontSize: 16,
-    lineHeight: 24,
-    color: '#667085',
-  },
-  centerState: {
-    minHeight: 360,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stateText: {
-    marginTop: 12,
-    fontSize: 15,
-    color: '#667085',
-  },
-  iconCircle: {
-    width: 72,
-    height: 72,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 24,
-    borderRadius: 36,
-    backgroundColor: '#E8EFF7',
-  },
-  iconText: {
-    fontSize: 36,
-    fontWeight: '700',
-    color: '#17365D',
-  },
-  emptyTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    textAlign: 'center',
-    color: '#1F2937',
-  },
-  emptyText: {
-    maxWidth: 320,
-    marginTop: 10,
-    fontSize: 15,
-    lineHeight: 22,
-    textAlign: 'center',
-    color: '#667085',
-  },
-  list: {
-    marginTop: 28,
-    gap: 14,
-  },
-  resultCount: {
-    marginBottom: 2,
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#667085',
-  },
-  reportCard: {
-    padding: 18,
-    borderWidth: 1,
-    borderColor: '#E4E7EC',
-    borderRadius: 16,
-    backgroundColor: '#FFFFFF',
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  headerText: {
-    flex: 1,
-  },
-  reportCode: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#667085',
-  },
-  reportDate: {
-    marginTop: 3,
-    fontSize: 12,
-    color: '#98A2B3',
-  },
-  statusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: '#E8EFF7',
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#17365D',
-  },
-  categoryName: {
-    marginTop: 16,
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#1F2937',
-  },
-  description: {
-    marginTop: 7,
-    fontSize: 14,
-    lineHeight: 20,
-    color: '#475467',
-  },
-  metaSection: {
-    marginTop: 14,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#EAECF0',
-    gap: 5,
-  },
-  metaText: {
-    fontSize: 12,
-    lineHeight: 18,
-    color: '#667085',
-  },
-  footerActions: {
-    marginTop: 28,
-    gap: 12,
-  },
-  primaryButton: {
-    width: '100%',
-    height: 54,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 12,
-    backgroundColor: '#17365D',
-  },
-  primaryButtonText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  secondaryButton: {
-    width: '100%',
-    height: 54,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#D0D5DD',
-    borderRadius: 12,
-    backgroundColor: '#FFFFFF',
-  },
-  secondaryButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#17365D',
-  },
-  buttonPressed: {
-    opacity: 0.88,
-  },
-});
+const styles =
+  StyleSheet.create({
+    safeArea: {
+      flex: 1,
+      backgroundColor: '#F7F9FB',
+    },
+
+    container: {
+      flexGrow: 1,
+      paddingHorizontal: 28,
+      paddingVertical: 32,
+    },
+
+    brand: {
+      marginBottom: 24,
+      fontSize: 22,
+      fontWeight: '700',
+      color: '#17365D',
+    },
+
+    title: {
+      fontSize: 32,
+      lineHeight: 39,
+      fontWeight: '700',
+      color: '#1F2937',
+    },
+
+    subtitle: {
+      marginTop: 10,
+      fontSize: 16,
+      lineHeight: 24,
+      color: '#667085',
+    },
+
+    centerState: {
+      minHeight: 360,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+
+    stateText: {
+      marginTop: 12,
+      fontSize: 15,
+      color: '#667085',
+    },
+
+    iconCircle: {
+      width: 72,
+      height: 72,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 24,
+      borderRadius: 36,
+      backgroundColor: '#E8EFF7',
+    },
+
+    iconText: {
+      fontSize: 36,
+      fontWeight: '700',
+      color: '#17365D',
+    },
+
+    emptyTitle: {
+      fontSize: 22,
+      fontWeight: '700',
+      textAlign: 'center',
+      color: '#1F2937',
+    },
+
+    emptyText: {
+      maxWidth: 320,
+      marginTop: 10,
+      fontSize: 15,
+      lineHeight: 22,
+      textAlign: 'center',
+      color: '#667085',
+    },
+
+    list: {
+      marginTop: 28,
+      gap: 14,
+    },
+
+    resultCount: {
+      marginBottom: 2,
+      fontSize: 14,
+      fontWeight: '600',
+      color: '#667085',
+    },
+
+    reportCard: {
+      padding: 18,
+      borderWidth: 1,
+      borderColor: '#E4E7EC',
+      borderRadius: 16,
+      backgroundColor: '#FFFFFF',
+    },
+
+    cardPressed: {
+      opacity: 0.82,
+      transform: [
+        {
+          scale: 0.995,
+        },
+      ],
+    },
+
+    cardHeader: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      justifyContent:
+        'space-between',
+      gap: 12,
+    },
+
+    headerText: {
+      flex: 1,
+    },
+
+    reportCode: {
+      fontSize: 12,
+      fontWeight: '700',
+      color: '#667085',
+    },
+
+    reportDate: {
+      marginTop: 3,
+      fontSize: 12,
+      color: '#98A2B3',
+    },
+
+    statusBadge: {
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 999,
+      backgroundColor: '#E8EFF7',
+    },
+
+    statusText: {
+      fontSize: 12,
+      fontWeight: '700',
+      color: '#17365D',
+    },
+
+    categoryName: {
+      marginTop: 16,
+      fontSize: 17,
+      fontWeight: '700',
+      color: '#1F2937',
+    },
+
+    description: {
+      marginTop: 7,
+      fontSize: 14,
+      lineHeight: 20,
+      color: '#475467',
+    },
+
+    metaSection: {
+      marginTop: 14,
+      paddingTop: 12,
+      borderTopWidth: 1,
+      borderTopColor: '#EAECF0',
+      gap: 5,
+    },
+
+    metaText: {
+      fontSize: 12,
+      lineHeight: 18,
+      color: '#667085',
+    },
+
+    detailRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent:
+        'space-between',
+      marginTop: 15,
+      paddingTop: 14,
+      borderTopWidth: 1,
+      borderTopColor: '#EAECF0',
+    },
+
+    detailText: {
+      fontSize: 14,
+      fontWeight: '700',
+      color: '#2F75B5',
+    },
+
+    detailArrow: {
+      fontSize: 24,
+      lineHeight: 24,
+      fontWeight: '400',
+      color: '#2F75B5',
+    },
+
+    footerActions: {
+      marginTop: 28,
+      gap: 12,
+    },
+
+    primaryButton: {
+      width: '100%',
+      height: 54,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: 12,
+      backgroundColor: '#17365D',
+    },
+
+    primaryButtonText: {
+      fontSize: 16,
+      fontWeight: '700',
+      color: '#FFFFFF',
+    },
+
+    secondaryButton: {
+      width: '100%',
+      height: 54,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 1,
+      borderColor: '#D0D5DD',
+      borderRadius: 12,
+      backgroundColor: '#FFFFFF',
+    },
+
+    secondaryButtonText: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: '#17365D',
+    },
+
+    buttonPressed: {
+      opacity: 0.88,
+    },
+  });

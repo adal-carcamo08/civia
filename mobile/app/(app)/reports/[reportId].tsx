@@ -1,3 +1,5 @@
+import { fetch as expoFetch } from 'expo/fetch';
+import { File, Paths } from 'expo-file-system';
 import {
   router,
   useFocusEffect,
@@ -104,6 +106,18 @@ function formatDate(value: string) {
   }).format(new Date(value));
 }
 
+function getAttachmentExtension(mimeType: string) {
+  switch (mimeType) {
+    case 'image/png':
+      return 'png';
+    case 'image/webp':
+      return 'webp';
+    case 'image/jpeg':
+    default:
+      return 'jpg';
+  }
+}
+
 export default function ReportDetailScreen() {
   const params = useLocalSearchParams<{
     reportId?: string | string[];
@@ -117,13 +131,79 @@ export default function ReportDetailScreen() {
 
   const [report, setReport] =
     useState<ReportDetail | null>(null);
+
   const [previewAttachment, setPreviewAttachment] =
     useState<ReportDetail['attachments'][number] | null>(
       null
     );
+
   const [isLoading, setIsLoading] = useState(true);
   const [isCancelling, setIsCancelling] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+
+  const [attachmentLocalUris, setAttachmentLocalUris] =
+    useState<Record<string, string>>({});
+
+  const [attachmentLoadErrors, setAttachmentLoadErrors] =
+    useState<Record<string, boolean>>({});
+
+  const loadProtectedAttachments = useCallback(
+    async (attachments: ReportDetail['attachments']) => {
+      if (!token) {
+        setAttachmentLocalUris({});
+        setAttachmentLoadErrors({});
+        return;
+      }
+
+      const nextUris: Record<string, string> = {};
+      const nextErrors: Record<string, boolean> = {};
+
+      await Promise.all(
+        attachments.map(async (attachment) => {
+          try {
+            const response = await expoFetch(
+              buildApiUrl(attachment.url),
+              {
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                },
+              }
+            );
+
+            if (!response.ok) {
+              throw new Error(
+                `No fue posible cargar la evidencia (${response.status}).`
+              );
+            }
+
+            const extension = getAttachmentExtension(
+              attachment.mimeType
+            );
+
+            const cachedFile = new File(
+              Paths.cache,
+              `civia-evidence-${attachment.id}.${extension}`
+            );
+
+            cachedFile.write(await response.bytes());
+
+            nextUris[attachment.id] = cachedFile.uri;
+          } catch (error) {
+            console.warn(
+              `No se pudo cargar la evidencia ${attachment.id}.`,
+              error
+            );
+
+            nextErrors[attachment.id] = true;
+          }
+        })
+      );
+
+      setAttachmentLocalUris(nextUris);
+      setAttachmentLoadErrors(nextErrors);
+    },
+    [token]
+  );
 
   const loadReport = useCallback(async () => {
     if (!token || !reportId) {
@@ -137,6 +217,8 @@ export default function ReportDetailScreen() {
 
     setIsLoading(true);
     setErrorMessage('');
+    setAttachmentLocalUris({});
+    setAttachmentLoadErrors({});
 
     try {
       const response = await apiRequest<ReportDetail>(
@@ -149,6 +231,10 @@ export default function ReportDetailScreen() {
       );
 
       setReport(response);
+
+      await loadProtectedAttachments(
+        response.attachments
+      );
     } catch (error) {
       if (
         error instanceof ApiError &&
@@ -165,7 +251,11 @@ export default function ReportDetailScreen() {
     } finally {
       setIsLoading(false);
     }
-  }, [reportId, token]);
+  }, [
+    loadProtectedAttachments,
+    reportId,
+    token,
+  ]);
 
   useFocusEffect(
     useCallback(() => {
@@ -603,18 +693,42 @@ export default function ReportDetailScreen() {
                                   : undefined,
                               ]}
                             >
-                              <Image
-                                source={{
-                                  uri: buildApiUrl(
-                                    attachment.url
-                                  ),
-                                  headers: {
-                                    Authorization: `Bearer ${token}`,
-                                  },
-                                }}
-                                style={styles.attachmentImage}
-                                resizeMode="cover"
-                              />
+                              {attachmentLocalUris[
+                                attachment.id
+                              ] ? (
+                                <Image
+                                  source={{
+                                    uri: attachmentLocalUris[
+                                      attachment.id
+                                    ],
+                                  }}
+                                  style={styles.attachmentImage}
+                                  resizeMode="cover"
+                                />
+                              ) : (
+                                <View
+                                  style={
+                                    styles.attachmentImagePlaceholder
+                                  }
+                                >
+                                  {attachmentLoadErrors[
+                                    attachment.id
+                                  ] ? (
+                                    <Text
+                                      style={
+                                        styles.attachmentImageErrorText
+                                      }
+                                    >
+                                      No disponible
+                                    </Text>
+                                  ) : (
+                                    <ActivityIndicator
+                                      size="small"
+                                      color="#17365D"
+                                    />
+                                  )}
+                                </View>
+                              )}
                             </Pressable>
 
                             <View
@@ -714,19 +828,40 @@ export default function ReportDetailScreen() {
           </View>
 
           <View style={styles.previewContent}>
-            {previewAttachment ? (
+            {previewAttachment &&
+            attachmentLocalUris[
+              previewAttachment.id
+            ] ? (
               <Image
                 source={{
-                  uri: buildApiUrl(
-                    previewAttachment.url
-                  ),
-                  headers: {
-                    Authorization: `Bearer ${token}`,
-                  },
+                  uri: attachmentLocalUris[
+                    previewAttachment.id
+                  ],
                 }}
                 style={styles.previewImage}
                 resizeMode="contain"
               />
+            ) : previewAttachment ? (
+              <View style={styles.previewPlaceholder}>
+                {attachmentLoadErrors[
+                  previewAttachment.id
+                ] ? (
+                  <Text style={styles.previewErrorText}>
+                    No pudimos cargar esta evidencia.
+                  </Text>
+                ) : (
+                  <>
+                    <ActivityIndicator
+                      size="large"
+                      color="#FFFFFF"
+                    />
+
+                    <Text style={styles.previewLoadingText}>
+                      Cargando evidencia...
+                    </Text>
+                  </>
+                )}
+              </View>
             ) : null}
           </View>
         </View>
@@ -740,25 +875,30 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F7F9FB',
   },
+
   scrollContent: {
     flexGrow: 1,
   },
+
   container: {
     flex: 1,
     paddingHorizontal: 28,
     paddingTop: 20,
     paddingBottom: 32,
   },
+
   topBackButton: {
     alignSelf: 'flex-start',
     paddingVertical: 8,
     marginBottom: 10,
   },
+
   topBackText: {
     fontSize: 15,
     fontWeight: '600',
     color: '#2F75B5',
   },
+
   brand: {
     marginBottom: 24,
     fontSize: 22,
@@ -766,11 +906,13 @@ const styles = StyleSheet.create({
     color: '#17365D',
     letterSpacing: 0.5,
   },
+
   title: {
     fontSize: 32,
     fontWeight: '700',
     color: '#1F2937',
   },
+
   reportCode: {
     marginTop: 8,
     fontSize: 13,
@@ -778,12 +920,14 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#667085',
   },
+
   centerState: {
     minHeight: 420,
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 40,
   },
+
   stateText: {
     maxWidth: 320,
     marginTop: 10,
@@ -792,12 +936,14 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: '#667085',
   },
+
   errorTitle: {
     fontSize: 20,
     fontWeight: '700',
     textAlign: 'center',
     color: '#1F2937',
   },
+
   primaryButton: {
     width: '100%',
     height: 54,
@@ -807,11 +953,13 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: '#17365D',
   },
+
   primaryButtonText: {
     fontSize: 16,
     fontWeight: '700',
     color: '#FFFFFF',
   },
+
   statusCard: {
     marginTop: 28,
     padding: 20,
@@ -820,11 +968,13 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: '#FFFFFF',
   },
+
   sectionLabel: {
     fontSize: 13,
     fontWeight: '600',
     color: '#667085',
   },
+
   statusBadge: {
     alignSelf: 'flex-start',
     marginTop: 10,
@@ -833,16 +983,19 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: '#E8EFF7',
   },
+
   statusText: {
     fontSize: 15,
     fontWeight: '700',
     color: '#17365D',
   },
+
   updatedText: {
     marginTop: 10,
     fontSize: 12,
     color: '#98A2B3',
   },
+
   actionsSection: {
     marginTop: 20,
     padding: 18,
@@ -851,12 +1004,14 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: '#FFFFFF',
   },
+
   actionsTitle: {
     marginBottom: 12,
     fontSize: 16,
     fontWeight: '700',
     color: '#1F2937',
   },
+
   editButton: {
     height: 50,
     alignItems: 'center',
@@ -865,11 +1020,13 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: '#17365D',
   },
+
   editButtonText: {
     fontSize: 15,
     fontWeight: '700',
     color: '#FFFFFF',
   },
+
   cancelButton: {
     height: 50,
     alignItems: 'center',
@@ -879,29 +1036,35 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: '#FEF3F2',
   },
+
   cancelButtonText: {
     fontSize: 15,
     fontWeight: '700',
     color: '#B42318',
   },
+
   actionHelperText: {
     marginTop: 9,
     fontSize: 12,
     lineHeight: 18,
     color: '#667085',
   },
+
   disabledButton: {
     opacity: 0.55,
   },
+
   section: {
     marginTop: 28,
   },
+
   sectionTitle: {
     marginBottom: 12,
     fontSize: 20,
     fontWeight: '700',
     color: '#1F2937',
   },
+
   infoCard: {
     overflow: 'hidden',
     borderWidth: 1,
@@ -909,24 +1072,29 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: '#FFFFFF',
   },
+
   infoItem: {
     padding: 18,
   },
+
   infoLabel: {
     fontSize: 13,
     fontWeight: '600',
     color: '#667085',
   },
+
   infoValue: {
     marginTop: 5,
     fontSize: 15,
     lineHeight: 22,
     color: '#344054',
   },
+
   separator: {
     height: 1,
     backgroundColor: '#E4E7EC',
   },
+
   emptyCard: {
     padding: 18,
     borderWidth: 1,
@@ -934,11 +1102,13 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: '#FFFFFF',
   },
+
   emptyText: {
     fontSize: 14,
     lineHeight: 21,
     color: '#667085',
   },
+
   timelineList: {
     overflow: 'hidden',
     borderWidth: 1,
@@ -946,15 +1116,18 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: '#FFFFFF',
   },
+
   timelineCard: {
     flexDirection: 'row',
     paddingHorizontal: 18,
     paddingTop: 18,
   },
+
   timelineIndicator: {
     width: 24,
     alignItems: 'center',
   },
+
   timelineDot: {
     width: 12,
     height: 12,
@@ -962,6 +1135,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     backgroundColor: '#2F8F9D',
   },
+
   timelineLine: {
     width: 2,
     flex: 1,
@@ -969,32 +1143,38 @@ const styles = StyleSheet.create({
     marginTop: 5,
     backgroundColor: '#D0D5DD',
   },
+
   timelineContent: {
     flex: 1,
     paddingLeft: 10,
     paddingBottom: 20,
   },
+
   timelineTitle: {
     fontSize: 16,
     fontWeight: '700',
     color: '#1F2937',
   },
+
   timelineDate: {
     marginTop: 3,
     fontSize: 12,
     color: '#98A2B3',
   },
+
   timelineText: {
     marginTop: 8,
     fontSize: 14,
     lineHeight: 20,
     color: '#667085',
   },
+
   changedBy: {
     marginTop: 6,
     fontSize: 12,
     color: '#667085',
   },
+
   attachmentsCard: {
     overflow: 'hidden',
     borderWidth: 1,
@@ -1002,42 +1182,67 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: '#FFFFFF',
   },
+
   attachmentItem: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 16,
   },
+
   attachmentImageButton: {
     width: 76,
     height: 76,
     borderRadius: 12,
     overflow: 'hidden',
   },
+
   attachmentImage: {
     width: '100%',
     height: '100%',
     backgroundColor: '#E8EFF7',
   },
+
+  attachmentImagePlaceholder: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+    backgroundColor: '#E8EFF7',
+  },
+
+  attachmentImageErrorText: {
+    fontSize: 10,
+    lineHeight: 13,
+    fontWeight: '600',
+    textAlign: 'center',
+    color: '#667085',
+  },
+
   attachmentInfo: {
     flex: 1,
     marginLeft: 12,
   },
+
   fileName: {
     fontSize: 14,
     fontWeight: '700',
     color: '#344054',
   },
+
   fileMeta: {
     marginTop: 4,
     fontSize: 11,
     color: '#98A2B3',
   },
+
   protectedText: {
     marginTop: 5,
     fontSize: 11,
     fontWeight: '600',
     color: '#2F75B5',
   },
+
   backButton: {
     height: 54,
     alignItems: 'center',
@@ -1048,15 +1253,18 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: '#FFFFFF',
   },
+
   backButtonText: {
     fontSize: 16,
     fontWeight: '600',
     color: '#17365D',
   },
+
   previewOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.96)',
   },
+
   previewHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1066,24 +1274,29 @@ const styles = StyleSheet.create({
     paddingTop: 56,
     paddingBottom: 16,
   },
+
   previewFileName: {
     flex: 1,
     fontSize: 14,
     fontWeight: '600',
     color: '#FFFFFF',
   },
+
   previewCloseButton: {
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
+
   previewClosePressed: {
     opacity: 0.65,
   },
+
   previewCloseText: {
     fontSize: 15,
     fontWeight: '700',
     color: '#FFFFFF',
   },
+
   previewContent: {
     flex: 1,
     alignItems: 'center',
@@ -1091,10 +1304,33 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingBottom: 40,
   },
+
   previewImage: {
     width: '100%',
     height: '100%',
   },
+
+  previewPlaceholder: {
+    flex: 1,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  previewLoadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: '#FFFFFF',
+  },
+
+  previewErrorText: {
+    paddingHorizontal: 24,
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: 'center',
+    color: '#FFFFFF',
+  },
+
   buttonPressed: {
     opacity: 0.88,
   },

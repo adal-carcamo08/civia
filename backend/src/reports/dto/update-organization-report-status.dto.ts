@@ -19,7 +19,7 @@ export type OrganizationReportStatus =
 export class UpdateOrganizationReportStatusDto {
   @IsString()
   @IsIn(ORGANIZATION_REPORT_STATUS_VALUES)
-  status: OrganizationReportStatus;
+  status!: OrganizationReportStatus;
 
   @IsOptional()
   @IsString()

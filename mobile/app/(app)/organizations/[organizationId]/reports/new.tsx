@@ -35,6 +35,27 @@ type Category = {
   } | null;
 };
 
+type AiSuggestion = {
+  intent: string;
+  domain: string;
+  problemType: string;
+  problemLabel: string;
+  suggestedCategory: {
+    id: string;
+    name: string;
+  };
+  suggestedDepartment: {
+    id: string;
+    name: string;
+  } | null;
+  priority: 'LOW' | 'MEDIUM' | 'HIGH';
+  detectionConfidence: number;
+  categoryMatchConfidence: number;
+  confidence: number;
+  model: string;
+  classificationMode: 'online_text' | 'online_text_image';
+};
+
 type CreatedReport = {
   id: string;
   code: string;
@@ -45,6 +66,43 @@ type CreatedReport = {
   longitude: number | null;
   createdAt: string;
 };
+
+type AiImageEvidence = {
+  mime_type: 'image/jpeg' | 'image/png' | 'image/webp';
+  data_base64: string;
+};
+
+function getMimeTypeFromFile(
+  file: File,
+  uri: string
+): 'image/jpeg' | 'image/png' | 'image/webp' {
+  if (file.type === 'image/png') {
+    return 'image/png';
+  }
+
+  if (file.type === 'image/webp') {
+    return 'image/webp';
+  }
+
+  if (
+    file.type === 'image/jpeg' ||
+    file.type === 'image/jpg'
+  ) {
+    return 'image/jpeg';
+  }
+
+  const normalizedUri = uri.toLowerCase();
+
+  if (normalizedUri.endsWith('.png')) {
+    return 'image/png';
+  }
+
+  if (normalizedUri.endsWith('.webp')) {
+    return 'image/webp';
+  }
+
+  return 'image/jpeg';
+}
 
 export default function NewReportScreen() {
   const params = useLocalSearchParams<{
@@ -78,6 +136,15 @@ export default function NewReportScreen() {
   const [descriptionError, setDescriptionError] = useState('');
   const [locationError, setLocationError] = useState('');
   const [photoError, setPhotoError] = useState('');
+
+  const [aiSuggestion, setAiSuggestion] =
+    useState<AiSuggestion | null>(null);
+
+  const [isLoadingSuggestion, setIsLoadingSuggestion] =
+    useState(false);
+
+  const [aiSuggestionError, setAiSuggestionError] =
+    useState('');
 
   const loadCategories = useCallback(async () => {
     if (!token || !organizationId) {
@@ -114,6 +181,126 @@ export default function NewReportScreen() {
       void loadCategories();
     }, [loadCategories])
   );
+
+  const buildAiImagesPayload = async (): Promise<
+    AiImageEvidence[]
+  > => {
+    const imagesForAnalysis = photoUris.slice(0, 3);
+    const payload: AiImageEvidence[] = [];
+
+    for (const uri of imagesForAnalysis) {
+      const file = new File(uri);
+      const data_base64 = await file.base64();
+
+      if (!data_base64.trim()) {
+        throw new Error(
+          'No fue posible leer una de las fotografías.'
+        );
+      }
+
+      payload.push({
+        mime_type: getMimeTypeFromFile(
+          file,
+          uri
+        ),
+        data_base64,
+      });
+    }
+
+    if (
+      imagesForAnalysis.length > 0 &&
+      payload.length !== imagesForAnalysis.length
+    ) {
+      throw new Error(
+        'No fue posible preparar las fotografías para CIVIA.'
+      );
+    }
+
+    return payload;
+  };
+
+  const requestAiSuggestion = async () => {
+    const normalizedDescription =
+      description.trim();
+
+    if (
+      !token ||
+      !organizationId ||
+      normalizedDescription.length < 10
+    ) {
+      setAiSuggestion(null);
+      setAiSuggestionError(
+        'Escribe al menos 10 caracteres para solicitar una sugerencia.'
+      );
+      return;
+    }
+
+    setIsLoadingSuggestion(true);
+    setAiSuggestionError('');
+
+    try {
+      const images = await buildAiImagesPayload();
+
+      const suggestion =
+        await apiRequest<AiSuggestion>(
+          '/ai/report-suggestion',
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              organizationId,
+              description:
+                normalizedDescription,
+              images,
+            }),
+          }
+        );
+
+      setAiSuggestion(suggestion);
+
+      const suggestedCategory =
+        categories.find(
+          (category) =>
+            category.id ===
+            suggestion.suggestedCategory.id
+        );
+
+      if (suggestedCategory) {
+        setSelectedCategory(
+          suggestedCategory
+        );
+
+        setCategoryError('');
+
+        if (
+          suggestedCategory.name !==
+          'Otro / No estoy seguro'
+        ) {
+          setOtherProblemType('');
+          setOtherProblemTypeError('');
+        }
+      }
+    } catch (error) {
+      setAiSuggestion(null);
+
+      if (
+        photoUris.length > 0 &&
+        error instanceof Error
+      ) {
+        setAiSuggestionError(
+          `No pudimos analizar las fotografías con CIVIA. ${error.message}`
+        );
+      } else {
+        setAiSuggestionError(
+          'No pudimos obtener la sugerencia de CIVIA. Puedes continuar seleccionando la categoría manualmente.'
+        );
+      }
+    } finally {
+      setIsLoadingSuggestion(false);
+    }
+  };
 
   const selectPhoto = async () => {
     setPhotoError('');
@@ -153,6 +340,9 @@ export default function NewReportScreen() {
 
         return [...current, asset.uri];
       });
+
+      setAiSuggestion(null);
+      setAiSuggestionError('');
     }
   };
 
@@ -240,6 +430,27 @@ ${normalizedDescription}`
             categoryId: selectedCategory.id,
             description: finalDescription,
             location: normalizedLocation,
+            ...(aiSuggestion
+              ? {
+                  aiAnalysis: {
+                    intent: aiSuggestion.intent,
+                    domain: aiSuggestion.domain,
+                    problemType: aiSuggestion.problemType,
+                    problemLabel: aiSuggestion.problemLabel,
+                    suggestedCategoryId:
+                      aiSuggestion.suggestedCategory.id,
+                    priority: aiSuggestion.priority,
+                    detectionConfidence:
+                      aiSuggestion.detectionConfidence,
+                    categoryMatchConfidence:
+                      aiSuggestion.categoryMatchConfidence,
+                    confidence: aiSuggestion.confidence,
+                    model: aiSuggestion.model,
+                    classificationMode:
+                      aiSuggestion.classificationMode,
+                  },
+                }
+              : {}),
           }),
         }
       );
@@ -383,6 +594,8 @@ ${lastUploadError}`
                               )
                             );
                             setPhotoError('');
+                            setAiSuggestion(null);
+                            setAiSuggestionError('');
                           }}
                           style={({ pressed }) => [
                             styles.photoRemoveButton,
@@ -429,7 +642,8 @@ ${lastUploadError}`
                 </Text>
 
                 <Text style={styles.helperText}>
-                  Las fotografías son opcionales.
+                  Las fotografías son opcionales. CIVIA analizará
+                  hasta 3 imágenes para generar la sugerencia.
                 </Text>
 
                 {photoError ? (
@@ -518,7 +732,8 @@ ${lastUploadError}`
                   value={description}
                   onChangeText={(value) => {
                     setDescription(value);
-
+                    setAiSuggestion(null);
+                    setAiSuggestionError('');
                     if (descriptionError) {
                       setDescriptionError('');
                     }
@@ -543,6 +758,198 @@ ${lastUploadError}`
 
                   <Text style={styles.counter}>{description.length}/500</Text>
                 </View>
+              </View>
+              <View style={styles.aiCard}>
+                <View style={styles.aiHeader}>
+                  <View style={styles.aiIcon}>
+                    <Text style={styles.aiIconText}>IA</Text>
+                  </View>
+
+                  <View style={styles.aiHeaderContent}>
+                    <Text style={styles.aiTitle}>
+                      Sugerencia de CIVIA
+                    </Text>
+
+                    <Text style={styles.aiSubtitle}>
+                      Analiza la descripción y te ayuda a clasificar el reporte.
+                    </Text>
+                  </View>
+                </View>
+
+                <Pressable
+                  onPress={() => {
+                    void requestAiSuggestion();
+                  }}
+                  disabled={
+                    isLoadingSuggestion ||
+                    description.trim().length < 10
+                  }
+                  style={({ pressed }) => [
+                    styles.aiButton,
+                    isLoadingSuggestion ||
+                    description.trim().length < 10
+                      ? styles.aiButtonDisabled
+                      : undefined,
+                    pressed &&
+                    !isLoadingSuggestion &&
+                    description.trim().length >= 10
+                      ? styles.buttonPressed
+                      : undefined,
+                  ]}
+                >
+                  {isLoadingSuggestion ? (
+                    <View style={styles.aiLoadingRow}>
+                      <ActivityIndicator
+                        size="small"
+                        color="#FFFFFF"
+                      />
+
+                      <Text style={styles.aiButtonText}>
+                        Analizando...
+                      </Text>
+                    </View>
+                  ) : (
+                    <Text style={styles.aiButtonText}>
+                      Analizar con CIVIA
+                    </Text>
+                  )}
+                </Pressable>
+
+                {description.trim().length < 10 ? (
+                  <Text style={styles.aiHelper}>
+                    Escribe al menos 10 caracteres en la descripción para activar el análisis.
+                  </Text>
+                ) : null}
+
+                {photoUris.length > 0 ? (
+                  <Text style={styles.aiHelper}>
+                    Si adjuntas fotografías, CIVIA también las tomará en cuenta.
+                  </Text>
+                ) : null}
+
+                {aiSuggestionError ? (
+                  <Text style={styles.aiErrorText}>
+                    {aiSuggestionError}
+                  </Text>
+                ) : null}
+
+                {aiSuggestion ? (
+                  <View style={styles.aiResult}>
+                    <View style={styles.aiResultHeader}>
+                      <Text style={styles.aiResultTitle}>
+                        Análisis completado
+                      </Text>
+
+                      <View style={styles.aiConfidenceBadge}>
+                        <Text style={styles.aiConfidenceText}>
+                          {Math.round(
+                            aiSuggestion.detectionConfidence * 100
+                          )}
+                          % detección
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.aiDivider} />
+
+                    <View style={styles.aiResultRow}>
+                      <Text style={styles.aiResultLabel}>
+                        Tipo de análisis
+                      </Text>
+
+                      <Text style={styles.aiResultValue}>
+                        {aiSuggestion.classificationMode ===
+                        'online_text_image'
+                          ? 'Texto + evidencia visual'
+                          : 'Solo texto'}
+                      </Text>
+                    </View>
+
+                    <View style={styles.aiDivider} />
+
+                    <View style={styles.aiResultRow}>
+                      <Text style={styles.aiResultLabel}>
+                        Problema detectado
+                      </Text>
+
+                      <Text style={styles.aiResultValue}>
+                        {aiSuggestion.problemLabel}
+                      </Text>
+                    </View>
+
+                    <View style={styles.aiDivider} />
+
+                    <View style={styles.aiResultRow}>
+                      <Text style={styles.aiResultLabel}>
+                        Dominio
+                      </Text>
+
+                      <Text style={styles.aiResultValue}>
+                        {aiSuggestion.domain}
+                      </Text>
+                    </View>
+
+                    <View style={styles.aiDivider} />
+
+                    <View style={styles.aiResultRow}>
+                      <Text style={styles.aiResultLabel}>
+                        Categoría disponible
+                      </Text>
+
+                      <Text style={styles.aiResultValue}>
+                        {aiSuggestion.suggestedCategory.name}
+                      </Text>
+                    </View>
+
+                    <View style={styles.aiDivider} />
+
+                    <View style={styles.aiResultRow}>
+                      <Text style={styles.aiResultLabel}>
+                        Coincidencia con categoría
+                      </Text>
+
+                      <Text style={styles.aiResultValue}>
+                        {Math.round(
+                          aiSuggestion.categoryMatchConfidence * 100
+                        )}
+                        %
+                      </Text>
+                    </View>
+
+                    <View style={styles.aiDivider} />
+
+                    <View style={styles.aiResultRow}>
+                      <Text style={styles.aiResultLabel}>
+                        Área responsable
+                      </Text>
+
+                      <Text style={styles.aiResultValue}>
+                        {aiSuggestion.suggestedDepartment?.name ??
+                          'Sin área asignada'}
+                      </Text>
+                    </View>
+
+                    <View style={styles.aiDivider} />
+
+                    <View style={styles.aiResultRow}>
+                      <Text style={styles.aiResultLabel}>
+                        Prioridad
+                      </Text>
+
+                      <Text style={styles.aiResultValue}>
+                        {aiSuggestion.priority === 'HIGH'
+                          ? 'Alta'
+                          : aiSuggestion.priority === 'MEDIUM'
+                            ? 'Media'
+                            : 'Baja'}
+                      </Text>
+                    </View>
+
+                    <Text style={styles.aiNotice}>
+                      La categoría sugerida fue seleccionada automáticamente. Puedes cambiarla manualmente antes de enviar el reporte.
+                    </Text>
+                  </View>
+                ) : null}
               </View>
 
               <View style={styles.field}>
@@ -1132,6 +1539,139 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+  aiCard: {
+    padding: 18,
+    borderWidth: 1,
+    borderColor: '#C7D7EA',
+    borderRadius: 16,
+    backgroundColor: '#F4F8FC',
+  },
+  aiHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  aiIcon: {
+    width: 42,
+    height: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+    borderRadius: 12,
+    backgroundColor: '#17365D',
+  },
+  aiIconText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  aiHeaderContent: {
+    flex: 1,
+  },
+  aiTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#17365D',
+  },
+  aiSubtitle: {
+    marginTop: 4,
+    fontSize: 13,
+    lineHeight: 19,
+    color: '#667085',
+  },
+  aiButton: {
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 16,
+    paddingHorizontal: 16,
+    borderRadius: 11,
+    backgroundColor: '#17365D',
+  },
+  aiButtonDisabled: {
+    opacity: 0.45,
+  },
+  aiButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  aiLoadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  aiHelper: {
+    marginTop: 9,
+    fontSize: 12,
+    lineHeight: 17,
+    color: '#667085',
+  },
+  aiErrorText: {
+    marginTop: 10,
+    fontSize: 13,
+    lineHeight: 18,
+    color: '#B42318',
+  },
+  aiResult: {
+    marginTop: 16,
+    padding: 15,
+    borderWidth: 1,
+    borderColor: '#D8E2EE',
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+  },
+  aiResultHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  aiResultTitle: {
+    flex: 1,
+    marginRight: 10,
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#17365D',
+  },
+  aiConfidenceBadge: {
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 20,
+    backgroundColor: '#EAF2FA',
+  },
+  aiConfidenceText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#17365D',
+  },
+  aiResultRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+  },
+  aiResultLabel: {
+    flex: 1,
+    marginRight: 12,
+    fontSize: 13,
+    color: '#667085',
+  },
+  aiResultValue: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'right',
+    color: '#17365D',
+  },
+  aiDivider: {
+    height: 1,
+    marginVertical: 11,
+    backgroundColor: '#EAECF0',
+  },
+  aiNotice: {
+    marginTop: 15,
+    fontSize: 12,
+    lineHeight: 18,
+    color: '#475467',
   },
   buttonPressed: {
     opacity: 0.88,

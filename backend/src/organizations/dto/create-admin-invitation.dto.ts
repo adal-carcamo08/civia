@@ -8,5 +8,5 @@ export class CreateAdminInvitationDto {
   @IsString()
   @IsEmail()
   @MaxLength(254)
-  email: string;
+  email!: string;
 }

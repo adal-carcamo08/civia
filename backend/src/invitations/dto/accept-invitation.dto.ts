@@ -8,5 +8,5 @@ export class AcceptInvitationDto {
   @IsString()
   @MinLength(8)
   @MaxLength(200)
-  token: string;
+  token!: string;
 }

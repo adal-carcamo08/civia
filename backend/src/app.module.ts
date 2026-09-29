@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { AiModule } from './ai/ai.module';
 import { AuthModule } from './auth/auth.module';
 import { HealthModule } from './health/health.module';
 import { InvitationsModule } from './invitations/invitations.module';
@@ -15,6 +16,7 @@ import { ReportsModule } from './reports/reports.module';
       isGlobal: true,
     }),
     PrismaModule,
+    AiModule,
     HealthModule,
     AuthModule,
     InvitationsModule,

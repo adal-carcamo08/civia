@@ -1,143 +1,251 @@
-const apiUrl = process.env.EXPO_PUBLIC_API_URL?.replace(/\/+$/, '');
+const apiUrl =
+  process.env.EXPO_PUBLIC_API_URL?.replace(/\/+$/, '');
 
-const API_TIMEOUT_MS = 8000;
-
-export function buildApiUrl(path: string) {
-  if (!apiUrl) {
-    throw new Error('La URL de la API no está configurada.');
-  }
-
-  const normalizedPath = path.startsWith('/')
-    ? path
-    : `/${path}`;
-
-  return `${apiUrl}${normalizedPath}`;
-}
+const DEFAULT_TIMEOUT_MS = 15000;
+const AI_TIMEOUT_MS = 65000;
 
 export class ApiError extends Error {
-  readonly status: number;
-  readonly responseBody: string;
+  status: number;
 
   constructor(
     status: number,
-    message: string,
-    responseBody: string
+    message: string
   ) {
     super(message);
+
     this.name = 'ApiError';
     this.status = status;
-    this.responseBody = responseBody;
   }
 }
 
 export class ApiNetworkError extends Error {
-  readonly kind: 'NETWORK' | 'TIMEOUT';
-
-  constructor(
-    kind: 'NETWORK' | 'TIMEOUT',
-    message: string
-  ) {
+  constructor(message: string) {
     super(message);
+
     this.name = 'ApiNetworkError';
-    this.kind = kind;
   }
 }
 
-function getErrorMessage(
-  responseBody: string,
-  status: number
-): string {
-  if (responseBody) {
-    try {
-      const parsed = JSON.parse(responseBody) as {
-        message?: string | string[];
-      };
+type ApiRequestOptions = RequestInit & {
+  timeoutMs?: number;
+  retryOnNetworkError?: boolean;
+};
 
-      if (Array.isArray(parsed.message)) {
-        return parsed.message.join(' ');
-      }
-
-      if (typeof parsed.message === 'string') {
-        return parsed.message;
-      }
-    } catch {
-      return responseBody;
-    }
-
-    return responseBody;
-  }
-
-  return `No se pudo completar la solicitud (${status}).`;
-}
-
-export async function apiRequest<T>(
-  path: string,
-  options: RequestInit = {}
-): Promise<T> {
-  if (!apiUrl) {
-    throw new Error('La URL de la API no está configurada.');
-  }
-
-  const normalizedPath = path.startsWith('/')
+function normalizePath(path: string) {
+  return path.startsWith('/')
     ? path
     : `/${path}`;
+}
 
-  const headers = new Headers(options.headers);
-
-  if (
-    options.body &&
-    !(options.body instanceof FormData) &&
-    !headers.has('Content-Type')
-  ) {
-    headers.set('Content-Type', 'application/json');
+export function buildApiUrl(path: string) {
+  if (!apiUrl) {
+    throw new ApiNetworkError(
+      'La URL de la API no está configurada.'
+    );
   }
 
-  const controller = new AbortController();
+  return `${apiUrl}${normalizePath(path)}`;
+}
 
-  const timeout = setTimeout(() => {
-    controller.abort();
-  }, API_TIMEOUT_MS);
-
-  let response: Response;
+function extractApiErrorMessage(
+  rawBody: string,
+  status: number
+) {
+  if (!rawBody) {
+    return `No se pudo completar la solicitud (${status}).`;
+  }
 
   try {
-    response = await fetch(
-      `${apiUrl}${normalizedPath}`,
+    const parsed = JSON.parse(rawBody) as {
+      message?: string | string[];
+    };
+
+    if (Array.isArray(parsed.message)) {
+      return parsed.message.join(' ');
+    }
+
+    if (
+      typeof parsed.message === 'string' &&
+      parsed.message.trim()
+    ) {
+      return parsed.message;
+    }
+  } catch {
+    // Si no es JSON, usamos el texto recibido.
+  }
+
+  return rawBody;
+}
+
+async function executeRequest<T>(
+  path: string,
+  options: ApiRequestOptions,
+  allowRetry: boolean
+): Promise<T> {
+  const normalizedPath = normalizePath(path);
+
+  const method =
+    (options.method ?? 'GET').toUpperCase();
+
+  const {
+    timeoutMs,
+    retryOnNetworkError,
+    signal: externalSignal,
+    ...fetchOptions
+  } = options;
+
+  const effectiveTimeout =
+    timeoutMs ??
+    (
+      normalizedPath.startsWith('/ai/')
+        ? AI_TIMEOUT_MS
+        : DEFAULT_TIMEOUT_MS
+    );
+
+  const shouldRetry =
+    retryOnNetworkError ??
+    method === 'GET';
+
+  const controller =
+    new AbortController();
+
+  const abortFromExternalSignal = () => {
+    controller.abort();
+  };
+
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      controller.abort();
+    } else {
+      externalSignal.addEventListener(
+        'abort',
+        abortFromExternalSignal,
+        { once: true }
+      );
+    }
+  }
+
+  const timeoutId = setTimeout(
+    () => {
+      controller.abort();
+    },
+    effectiveTimeout
+  );
+
+  const headers =
+    new Headers(fetchOptions.headers);
+
+  if (
+    fetchOptions.body &&
+    !(fetchOptions.body instanceof FormData) &&
+    !headers.has('Content-Type')
+  ) {
+    headers.set(
+      'Content-Type',
+      'application/json'
+    );
+  }
+
+  try {
+    const response = await fetch(
+      buildApiUrl(normalizedPath),
       {
-        ...options,
+        ...fetchOptions,
         headers,
         signal: controller.signal,
       }
     );
-  } catch {
-    if (controller.signal.aborted) {
+
+    if (!response.ok) {
+      const rawBody =
+        await response.text();
+
+      throw new ApiError(
+        response.status,
+        extractApiErrorMessage(
+          rawBody,
+          response.status
+        )
+      );
+    }
+
+    if (response.status === 204) {
+      return undefined as T;
+    }
+
+    return (
+      await response.json()
+    ) as T;
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw error;
+    }
+
+    const canceledExternally =
+      externalSignal?.aborted === true;
+
+    const timedOut =
+      controller.signal.aborted &&
+      !canceledExternally;
+
+    if (
+      allowRetry &&
+      shouldRetry &&
+      method === 'GET' &&
+      !canceledExternally
+    ) {
+      await new Promise<void>(
+        (resolve) => {
+          setTimeout(resolve, 350);
+        }
+      );
+
+      return executeRequest<T>(
+        path,
+        {
+          ...options,
+          retryOnNetworkError: false,
+        },
+        false
+      );
+    }
+
+    if (timedOut) {
       throw new ApiNetworkError(
-        'TIMEOUT',
-        'La solicitud tardó demasiado en responder.'
+        normalizedPath.startsWith('/ai/')
+          ? 'El análisis de CIVIA está tardando más de lo esperado. Inténtalo nuevamente.'
+          : 'La solicitud tardó demasiado. Inténtalo nuevamente.'
+      );
+    }
+
+    if (canceledExternally) {
+      throw new ApiNetworkError(
+        'La solicitud fue cancelada.'
       );
     }
 
     throw new ApiNetworkError(
-      'NETWORK',
-      'No fue posible conectarse con el servidor.'
+      'No pudimos conectarnos con CIVIA. Verifica la conexión e inténtalo nuevamente.'
     );
   } finally {
-    clearTimeout(timeout);
+    clearTimeout(timeoutId);
+
+    if (externalSignal) {
+      externalSignal.removeEventListener(
+        'abort',
+        abortFromExternalSignal
+      );
+    }
   }
+}
 
-  if (!response.ok) {
-    const responseBody = await response.text();
-
-    throw new ApiError(
-      response.status,
-      getErrorMessage(responseBody, response.status),
-      responseBody
-    );
-  }
-
-  if (response.status === 204) {
-    return undefined as T;
-  }
-
-  return (await response.json()) as T;
+export async function apiRequest<T>(
+  path: string,
+  options: ApiRequestOptions = {}
+): Promise<T> {
+  return executeRequest<T>(
+    path,
+    options,
+    true
+  );
 }

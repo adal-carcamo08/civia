@@ -48,6 +48,12 @@ enum ReportStatus {
   CANCELLED
 }
 
+enum AiPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
 model User {
   id           String   @id @default(uuid())
   fullName     String
@@ -187,12 +193,42 @@ model Report {
 
   attachments ReportAttachment[]
   history     ReportStatusHistory[]
+  aiAnalysis  ReportAiAnalysis?
 
   @@index([reporterId, createdAt])
   @@index([organizationId, status])
   @@index([categoryId])
   @@index([departmentId, status])
   @@index([assignedToUserId, status])
+}
+
+model ReportAiAnalysis {
+  id                               String     @id @default(uuid())
+  reportId                         String     @unique
+  intent                           String
+  domain                           String
+  problemType                      String
+  problemLabel                     String
+  priority                         AiPriority
+  detectionConfidence              Float
+  categoryMatchConfidence          Float
+  confidence                       Float
+  suggestedCategoryId              String
+  suggestedCategoryName            String
+  suggestedDepartmentId            String?
+  suggestedDepartmentName          String?
+  selectedCategoryIdAtSubmission   String
+  selectedCategoryNameAtSubmission String
+  model                            String
+  classificationMode               String
+  suggestionAcceptedAtSubmission   Boolean
+  createdAt                        DateTime   @default(now())
+
+  report Report @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([suggestedCategoryId])
+  @@index([classificationMode])
+  @@index([priority])
 }
 
 model ReportAttachment {

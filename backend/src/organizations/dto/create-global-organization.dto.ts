@@ -11,7 +11,7 @@ export class CreateGlobalOrganizationDto {
   @IsString()
   @MinLength(2)
   @MaxLength(120)
-  name: string;
+  name!: string;
 
   @IsOptional()
   @IsString()
@@ -20,10 +20,10 @@ export class CreateGlobalOrganizationDto {
 
   @IsString()
   @IsIn(['PUBLIC', 'PRIVATE'])
-  type: 'PUBLIC' | 'PRIVATE';
+  type!: 'PUBLIC' | 'PRIVATE';
 
   @IsString()
   @IsEmail()
   @MaxLength(254)
-  initialAdminEmail: string;
+  initialAdminEmail! : string;
 }
