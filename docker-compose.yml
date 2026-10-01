@@ -3,19 +3,68 @@ services:
     image: postgres:17-alpine
     container_name: civia-postgres-dev
     restart: unless-stopped
+
     environment:
       POSTGRES_DB: civia
       POSTGRES_USER: civia_user
       POSTGRES_PASSWORD: civia_password
+
     ports:
-      - "127.0.0.1:15433:5432"
+      - "15433:5432"
+
     volumes:
       - civia_postgres_data:/var/lib/postgresql/data
+
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U civia_user -d civia"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U civia_user -d civia"
+        ]
       interval: 5s
       timeout: 5s
       retries: 10
+
+
+  civia_ai:
+    build:
+      context: ./ai-service
+      dockerfile: ../docker/ai.Dockerfile
+
+    container_name: civia_ai
+    restart: unless-stopped
+
+    env_file:
+      - ./ai-service/.env
+
+    ports:
+      - "8001:8001"
+
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: ../docker/backend.Dockerfile
+
+    container_name: civia_backend
+    restart: unless-stopped
+
+    env_file:
+      - ./backend/.env
+
+    environment:
+      DATABASE_URL: postgresql://civia_user:civia_password@postgres:5432/civia?schema=public
+      AI_SERVICE_URL: http://civia_ai:8001
+
+    ports:
+      - "3000:3000"
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      civia_ai:
+        condition: service_started
+
 
 volumes:
   civia_postgres_data:
